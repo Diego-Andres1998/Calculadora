@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guía de Usuario - PyStat Visualizer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & DOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Placeholder Comments Required by Prompt -->
+    <!-- Chosen Palette: Slate (Neutral Backgrounds) + Blue (Primary Accents) + Emerald/Violet (Secondary Accents) for a clean, documentation-style look. -->
+    <!-- Application Structure Plan: A classic documentation layout with a sticky sidebar navigation on the left and a scrollable content area on the right. Content is chunked into logical sections based on the GUIA_USO.md file. Interactivity includes tab switching and 'copy to clipboard' features for examples. -->
+    <!-- Visualization & Content Choices: 
+         - Models/Tools/Data: Presented as 'Feature Cards' with numbered steps for clarity.
+         - AI Section: Includes a specialized 'Prompt Box' component to mimic the chat interface.
+         - Tips/Notes: Highlighted using colored alert boxes to draw attention.
+         - Icons: Lucide-react icons used to visually distinguish sections, matching the main app's iconography.
+         - NO SVG/Mermaid: Only standard HTML/CSS and Lucide icons (via library) used.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
+        .sidebar-item.active { background-color: #eff6ff; color: #2563eb; border-right: 3px solid #2563eb; }
+        .step-number { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+        /* Smooth scrolling for content */
+        html { scroll-behavior: smooth; }
+        /* Hide scrollbar for sidebar but keep functionality */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // Lucide Icons Wrapper
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons({
+                        root: iconRef.current,
+                        name: name,
+                        attrs: { width: size, height: size, class: className }
+                    });
+                }
+            }, [name, size, className]);
+            return <i ref={iconRef} className={className} />;
+        };
+
+        // --- COMPONENTS ---
+
+        const CopyButton = ({ text }) => {
+            const [copied, setCopied] = useState(false);
+
+            const handleCopy = () => {
+                navigator.clipboard.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <button 
+                    onClick={handleCopy}
+                    className="flex items-center gap-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors"
+                    title="Copiar al portapapeles"
+                >
+                    {copied ? (
+                        <> <Icon name="check" size={14} className="text-green-600" /> Copiado </>
+                    ) : (
+                        <> <Icon name="copy" size={14} /> Copiar </>
+                    )}
+                </button>
+            );
+        };
+
+        const TipBox = ({ children }) => (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-md my-4 flex gap-3 items-start">
+                <div className="mt-0.5 text-amber-500 shrink-0"><Icon name="lightbulb" size={20} /></div>
+                <div className="text-sm text-slate-700">{children}</div>
+            </div>
+        );
+
+        const NoteBox = ({ children }) => (
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-md my-4 flex gap-3 items-start">
+                <div className="mt-0.5 text-blue-500 shrink-0"><Icon name="info" size={20} /></div>
+                <div className="text-sm text-slate-700">{children}</div>
+            </div>
+        );
+
+        const SectionHeader = ({ icon, title, description }) => (
+            <div className="mb-8 border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2.5 bg-blue-600 rounded-lg text-white shadow-sm shadow-blue-200">
+                        <Icon name={icon} size={28} />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-800">{title}</h2>
+                </div>
+                <p className="text-slate-500 text-lg leading-relaxed">{description}</p>
+            </div>
+        );
+
+        const Step = ({ num, title, children }) => (
+            <div className="flex gap-4 mb-6">
+                <div className="flex flex-col items-center">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-700 font-bold text-sm shadow-sm z-10 step-number">
+                        {num}
+                    </div>
+                    <div className="w-px h-full bg-slate-200 -mt-2 mb-2 grow"></div>
+                </div>
+                <div className="pb-4 pt-1 w-full">
+                    <h4 className="text-base font-bold text-slate-800 mb-2">{title}</h4>
+                    <div className="text-slate-600 text-sm leading-relaxed space-y-2">
+                        {children}
+                    </div>
+                </div>
+            </div>
+        );
+
+        // --- SECTIONS CONTENT ---
+
+        const IntroSection = ({ onNavigate }) => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="text-center py-12">
+                    <div className="inline-flex p-4 bg-white rounded-2xl shadow-lg mb-6 text-blue-600">
+                        <Icon name="book-open" size={48} />
+                    </div>
+                    <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">PyStat Visualizer</h1>
+                    <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">
+                        Tu navaja suiza para estadística y probabilidad. Combina potentes modelos matemáticos, análisis de datos en tiempo real y la inteligencia artificial de Google Gemini.
+                    </p>
+                    <div className="mt-8 flex justify-center gap-4">
+                        <button onClick={() => onNavigate('models')} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2">
+                            Comenzar <Icon name="arrow-right" size={18} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 mt-8">
+                    <div onClick={() => onNavigate('models')} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:border-blue-400 cursor-pointer transition-all hover:shadow-md group">
+                        <div className="mb-4 text-blue-500 group-hover:scale-110 transition-transform origin-left"><Icon name="calculator" size={32} /></div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">Calculadora de Modelos</h3>
+                        <p className="text-sm text-slate-500">Visualiza distribuciones Binomial, Poisson y Normal.</p>
+                    </div>
+                    <div onClick={() => onNavigate('data')} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:border-green-400 cursor-pointer transition-all hover:shadow-md group">
+                        <div className="mb-4 text-green-500 group-hover:scale-110 transition-transform origin-left"><Icon name="table" size={32} /></div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">Análisis de Datos</h3>
+                        <p className="text-sm text-slate-500">Estadística descriptiva instantánea para tus datasets.</p>
+                    </div>
+                    <div onClick={() => onNavigate('ai')} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:border-purple-400 cursor-pointer transition-all hover:shadow-md group">
+                        <div className="mb-4 text-purple-500 group-hover:scale-110 transition-transform origin-left"><Icon name="brain" size={32} /></div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">Analizador IA</h3>
+                        <p className="text-sm text-slate-500">Resuelve problemas de texto paso a paso con Gemini.</p>
+                    </div>
+                    <div onClick={() => onNavigate('tools')} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:border-amber-400 cursor-pointer transition-all hover:shadow-md group">
+                        <div className="mb-4 text-amber-500 group-hover:scale-110 transition-transform origin-left"><Icon name="function-square" size={32} /></div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">Herramientas Manuales</h3>
+                        <p className="text-sm text-slate-500">Combinatoria y Z-Score para estudiantes.</p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ModelsSection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader 
+                    icon="calculator" 
+                    title="Calculadora de Modelos" 
+                    description="Modela y visualiza distribuciones de probabilidad teóricas de manera interactiva." 
+                />
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+                    <h3 className="font-bold text-lg mb-6 border-b pb-2">📍 Paso a Paso</h3>
+                    
+                    <Step num="1" title="Selecciona la Distribución">
+                        <p>Ve a la pestaña <strong>"Modelos"</strong> en el menú lateral. Elige el tipo de distribución que deseas analizar:</p>
+                        <ul className="list-disc pl-5 mt-2 space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <li><strong className="text-blue-600">🔢 Binomial:</strong> Experimentos con número fijo de intentos (éxito/fracaso).</li>
+                            <li><strong className="text-purple-600">📞 Poisson:</strong> Conteo de eventos en un intervalo de tiempo/espacio.</li>
+                            <li><strong className="text-emerald-600">🔔 Normal:</strong> Datos continuos simétricos (campana de Gauss).</li>
+                        </ul>
+                    </Step>
+
+                    <Step num="2" title="Ingresa los Parámetros">
+                        <p>Dependiendo de tu elección, completa los campos:</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 text-xs font-mono">
+                            <div className="bg-slate-50 p-2 rounded border text-center">Binomial: <br/><strong>n, p</strong></div>
+                            <div className="bg-slate-50 p-2 rounded border text-center">Poisson: <br/><strong>λ (lambda)</strong></div>
+                            <div className="bg-slate-50 p-2 rounded border text-center">Normal: <br/><strong>μ, σ</strong></div>
+                        </div>
+                    </Step>
+
+                    <Step num="3" title="Probabilidad Exacta (Opcional)">
+                        <p>Si deseas calcular la probabilidad de un evento específico (ej. "exactamente 5 éxitos"), escribe el valor en el campo <strong>k</strong>.</p>
+                    </Step>
+
+                    <Step num="4" title="Calcular">
+                        <p>Haz clic en el botón <strong>"▶️ Calcular Modelo"</strong>.</p>
+                    </Step>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="bar-chart-2" className="text-blue-500"/> Resultados Visuales</h3>
+                    <ul className="space-y-3 text-sm text-slate-600">
+                        <li className="flex gap-2"><Icon name="check" size={16} className="text-green-500 mt-0.5"/> Gráfico interactivo combinado (Barras para probabilidad, Líneas para acumulada).</li>
+                        <li className="flex gap-2"><Icon name="check" size={16} className="text-green-500 mt-0.5"/> Consola con estadísticas clave: Media, Varianza, Desviación Estándar.</li>
+                        <li className="flex gap-2"><Icon name="check" size={16} className="text-green-500 mt-0.5"/> <strong>Insight IA:</strong> Interpretación inteligente del resultado (si la API Key está activa).</li>
+                    </ul>
+                </div>
+            </div>
+        );
+
+        const ToolsSection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader 
+                    icon="function-square" 
+                    title="Herramientas Manuales" 
+                    description="Calculadoras específicas para verificar ejercicios paso a paso o calcular valores puntuales." 
+                />
+
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-start mb-4">
+                            <h3 className="font-bold text-blue-700 flex items-center gap-2"><span className="bg-blue-100 p-1 rounded text-xs">1</span> Combinatoria</h3>
+                            <Icon name="hash" className="text-slate-300" />
+                        </div>
+                        <p className="text-sm text-slate-600 mb-4">Calcula formas de agrupar elementos.</p>
+                        <div className="bg-slate-50 p-3 rounded text-xs space-y-2 font-mono">
+                            <div className="flex justify-between"><span>Factorial:</span> <strong>n!</strong></div>
+                            <div className="flex justify-between"><span>Permutación:</span> <strong>nPr</strong></div>
+                            <div className="flex justify-between"><span>Combinación:</span> <strong>nCr</strong></div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-start mb-4">
+                            <h3 className="font-bold text-green-700 flex items-center gap-2"><span className="bg-green-100 p-1 rounded text-xs">2</span> Z-Score</h3>
+                            <Icon name="ruler" className="text-slate-300" />
+                        </div>
+                        <p className="text-sm text-slate-600 mb-4">Estandarización de valores normales.</p>
+                        <div className="bg-slate-50 p-3 rounded text-xs space-y-2">
+                            <p>Ingresa <strong>x</strong> (dato), <strong>μ</strong> (media), <strong>σ</strong> (desv).</p>
+                            <p>Obtén el <strong>Valor Z</strong> y la probabilidad acumulada.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <TipBox>
+                    Haz clic en el botón <strong>"❓ ¿Cómo se hace?"</strong> dentro de cada tarjeta en la aplicación para ver la fórmula matemática explicada en detalle.
+                </TipBox>
+            </div>
+        );
+
+        const DataSection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader 
+                    icon="table" 
+                    title="Análisis de Datos" 
+                    description="Procesa conjuntos de datos crudos para obtener estadística descriptiva y gráficos al instante." 
+                />
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <Step num="1" title="Ingresa tus Datos">
+                        <p className="mb-2">Escribe o pega tus números separados por comas, espacios o saltos de línea.</p>
+                        <div className="bg-slate-800 text-slate-200 p-4 rounded-lg font-mono text-sm relative group">
+                            12, 15, 10, 18, 20, 22, 15, 14, 19
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <CopyButton text="12, 15, 10, 18, 20, 22, 15, 14, 19" />
+                            </div>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">Puedes usar los botones "📚 Notas" o "💰 Ventas" en la app para cargar ejemplos.</p>
+                    </Step>
+
+                    <Step num="2" title="Configuración">
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
+                            <li><strong>Varianza:</strong> Elige entre Muestra (n-1) o Población (N).</li>
+                            <li><strong>Gráfico:</strong> Histograma (frecuencias) o Línea (tendencia/secuencia).</li>
+                        </ul>
+                    </Step>
+
+                    <Step num="3" title="Resultados">
+                        <p>Al hacer clic en <strong>"⚡ Analizar Datos"</strong>, obtendrás:</p>
+                        <div className="grid grid-cols-2 gap-4 mt-3">
+                            <div className="border border-slate-200 p-3 rounded bg-slate-50">
+                                <h5 className="font-bold text-xs uppercase text-slate-500 mb-1">Estadística</h5>
+                                <p className="text-sm">Media, Mediana, Moda, Desv. Estándar, Mín/Máx.</p>
+                            </div>
+                            <div className="border border-slate-200 p-3 rounded bg-slate-50">
+                                <h5 className="font-bold text-xs uppercase text-slate-500 mb-1">Visual</h5>
+                                <p className="text-sm">Gráfico generado automáticamente.</p>
+                            </div>
+                        </div>
+                    </Step>
+                </div>
+            </div>
+        );
+
+        const AISection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader 
+                    icon="brain" 
+                    title="Analizador con IA" 
+                    description="Resuelve problemas de texto paso a paso utilizando la potencia de Google Gemini." 
+                />
+
+                <div className="bg-gradient-to-r from-purple-50 to-white p-6 rounded-xl border border-purple-100 mb-6">
+                    <h3 className="font-bold text-purple-800 mb-4">📍 Cómo usarlo</h3>
+                    <ol className="list-decimal pl-5 space-y-3 text-sm text-purple-900">
+                        <li>Ve a la pestaña <strong>"Analizador IA"</strong>.</li>
+                        <li>
+                            Escribe tu problema en lenguaje natural. Por ejemplo:
+                            <div className="mt-2 bg-white p-3 rounded-lg border border-purple-100 shadow-sm relative">
+                                <p className="italic text-slate-600">"En una fábrica, el 5% de los tornillos son defectuosos. Si tomo una muestra de 20, ¿cuál es la probabilidad de que 2 estén mal?"</p>
+                                <div className="mt-2 flex justify-end">
+                                    <CopyButton text="En una fábrica, el 5% de los tornillos son defectuosos. Si tomo una muestra de 20, ¿cuál es la probabilidad de que 2 estén mal?" />
+                                </div>
+                            </div>
+                        </li>
+                        <li>Haz clic en <strong>"Resolver con IA"</strong>.</li>
+                    </ol>
+                </div>
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 className="font-bold text-lg mb-2">Lo que hace la IA:</h3>
+                    <ul className="space-y-2 text-sm text-slate-700">
+                        <li className="flex items-center gap-2"><span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-bold">1</span> Identifica el modelo (ej. Binomial).</li>
+                        <li className="flex items-center gap-2"><span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-bold">2</span> Extrae los datos del texto.</li>
+                        <li className="flex items-center gap-2"><span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-bold">3</span> Explica la solución paso a paso con fórmulas LaTeX.</li>
+                    </ul>
+                </div>
+
+                <NoteBox>
+                    <strong>Requiere API Key:</strong> Para usar esta función, debes configurar tu clave de Google Gemini en el menú de Configuración.
+                </NoteBox>
+            </div>
+        );
+
+        const SettingsSection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader 
+                    icon="settings" 
+                    title="Configuración y Personalización" 
+                    description="Adapta PyStat Visualizer a tus preferencias." 
+                />
+
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-slate-100 rounded-lg text-slate-600"><Icon name="moon" size={20} /></div>
+                            <h3 className="font-bold text-lg">Tema</h3>
+                        </div>
+                        <p className="text-sm text-slate-600 mb-4">Alterna entre <strong>Modo Claro</strong> y <strong>Modo Oscuro</strong> según tu preferencia visual o las condiciones de luz.</p>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-slate-100 rounded-lg text-slate-600"><Icon name="key" size={20} /></div>
+                            <h3 className="font-bold text-lg">API Key</h3>
+                        </div>
+                        <p className="text-sm text-slate-600 mb-4">Pega tu clave de <strong>Google Gemini</strong> aquí para activar las funciones de IA.</p>
+                        <div className="text-xs bg-slate-50 p-2 rounded text-slate-500 flex items-center gap-2">
+                            <Icon name="lock" size={12} /> Se guarda de forma segura en tu navegador.
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
+                    <div className="p-3 bg-green-100 text-green-700 rounded-full">
+                        <Icon name="download" size={24} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-lg">Exportación de Gráficos</h3>
+                        <p className="text-sm text-slate-600">Busca el icono de descarga en la esquina de cualquier gráfico para guardarlo como imagen <strong>PNG</strong> de alta calidad.</p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // --- MAIN LAYOUT ---
+
+        const SidebarItem = ({ id, label, icon, active, onClick }) => (
+            <button 
+                onClick={() => onClick(id)}
+                className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-all duration-200 text-sm font-medium
+                ${active ? 'bg-blue-50 text-blue-700 border-r-4 border-blue-600' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-r-4 border-transparent'}`}
+            >
+                <Icon name={icon} size={18} className={active ? 'text-blue-600' : 'text-slate-400'} />
+                {label}
+            </button>
+        );
+
+        const App = () => {
+            const [activeSection, setActiveSection] = useState('intro');
+            const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+            const menuItems = [
+                { id: 'intro', label: 'Bienvenida', icon: 'home' },
+                { id: 'models', label: 'Calculadora Modelos', icon: 'calculator' },
+                { id: 'tools', label: 'Herramientas', icon: 'function-square' },
+                { id: 'data', label: 'Análisis de Datos', icon: 'table' },
+                { id: 'ai', label: 'Analizador IA', icon: 'brain' },
+                { id: 'settings', label: 'Configuración', icon: 'settings' },
+            ];
+
+            const renderContent = () => {
+                switch(activeSection) {
+                    case 'intro': return <IntroSection onNavigate={setActiveSection} />;
+                    case 'models': return <ModelsSection />;
+                    case 'tools': return <ToolsSection />;
+                    case 'data': return <DataSection />;
+                    case 'ai': return <AISection />;
+                    case 'settings': return <SettingsSection />;
+                    default: return <IntroSection />;
+                }
+            };
+
+            return (
+                <div className="flex h-full bg-slate-50 text-slate-900 font-sans">
+                    {/* Mobile Menu Button */}
+                    <div className="fixed top-0 left-0 w-full bg-white border-b border-slate-200 p-4 md:hidden z-50 flex justify-between items-center shadow-sm">
+                        <span className="font-bold text-blue-700 flex items-center gap-2"><Icon name="book" size={20}/> Guía PyStat</span>
+                        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-slate-600">
+                            <Icon name={mobileMenuOpen ? "x" : "menu"} size={24} />
+                        </button>
+                    </div>
+
+                    {/* Sidebar */}
+                    <aside className={`
+                        fixed md:relative top-0 left-0 h-full w-64 bg-white border-r border-slate-200 shadow-sm z-40 transform transition-transform duration-300 ease-in-out pt-16 md:pt-0
+                        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+                    `}>
+                        <div className="p-6 border-b border-slate-100 hidden md:block">
+                            <h1 className="text-xl font-extrabold text-blue-700 flex items-center gap-2 tracking-tight">
+                                <Icon name="book" className="text-blue-600" /> Guía PyStat
+                            </h1>
+                            <p className="text-xs text-slate-400 mt-1 font-medium uppercase tracking-wider">Ultimate Edition</p>
+                        </div>
+                        <nav className="py-4 overflow-y-auto h-[calc(100%-80px)] no-scrollbar">
+                            <div className="px-4 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Navegación</div>
+                            {menuItems.map(item => (
+                                <SidebarItem 
+                                    key={item.id}
+                                    {...item} 
+                                    active={activeSection === item.id} 
+                                    onClick={(id) => {
+                                        setActiveSection(id);
+                                        setMobileMenuOpen(false);
+                                        window.scrollTo(0,0);
+                                    }} 
+                                />
+                            ))}
+                            
+                            <div className="mt-8 px-6">
+                                <div className="bg-slate-100 p-4 rounded-xl text-center">
+                                    <Icon name="life-buoy" className="mx-auto text-slate-400 mb-2" size={24} />
+                                    <p className="text-xs text-slate-500 mb-2">¿Necesitas ayuda extra?</p>
+                                    <a href="#" className="text-xs font-bold text-blue-600 hover:underline">Ver repositorio</a>
+                                </div>
+                            </div>
+                        </nav>
+                    </aside>
+
+                    {/* Main Content */}
+                    <main className="flex-1 h-full overflow-y-auto pt-20 md:pt-0 scroll-smooth">
+                        <div className="max-w-4xl mx-auto p-6 md:p-12 min-h-full">
+                            {renderContent()}
+                            
+                            <footer className="mt-12 pt-8 border-t border-slate-200 text-center text-slate-400 text-sm">
+                                <p>&copy; {new Date().getFullYear()} PyStat Visualizer Guide. Creado con React & Tailwind.</p>
+                            </footer>
+                        </div>
+                    </main>
+
+                    {/* Overlay for mobile */}
+                    {mobileMenuOpen && (
+                        <div 
+                            className="fixed inset-0 bg-black/20 z-30 md:hidden backdrop-blur-sm"
+                            onClick={() => setMobileMenuOpen(false)}
+                        />
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
