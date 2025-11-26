@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyStat Visualizer - Ultimate Edition (OpenRouter)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- KaTeX for Math Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+
+    <!-- React & Libraries via ImportMap -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+            "html-to-image": "https://esm.sh/html-to-image@1.11.11"
+        }
+    }
+    </script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom Scrollbar */
+        .console-scrollbar::-webkit-scrollbar { width: 8px; }
+        .console-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .console-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        .console-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.3); }
+
+        /* Animation */
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        /* KaTeX Adjustments */
+        .katex-display { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
+
+        /* Dark Mode Overrides */
+        body.dark { background-color: #0f172a; color: #f1f5f9; }
+        body.dark .bg-white { background-color: #1e293b; border-color: #334155; color: #f1f5f9; }
+        body.dark .text-gray-800 { color: #f1f5f9; }
+        body.dark .text-gray-600 { color: #94a3b8; }
+        body.dark .text-gray-500 { color: #64748b; }
+        body.dark .bg-gray-50 { background-color: #0f172a; }
+        body.dark .bg-gray-100 { background-color: #1e293b; }
+        body.dark input, body.dark textarea, body.dark select { 
+            background-color: #334155; border-color: #475569; color: white; 
+        }
+        body.dark .border-gray-200 { border-color: #334155; }
+        body.dark .border-gray-300 { border-color: #475569; }
+        
+        /* Math Container for Dark Mode */
+        body.dark .katex { color: #e2e8f0; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen overflow-hidden text-slate-800">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import * as htmlToImage from 'html-to-image';
+        import { 
+            Play, CheckCircle, Calculator, BarChart2, BookOpen, Settings, HelpCircle, 
+            Terminal, Activity, AlertCircle, Copy, Brain, MessageSquare, Eraser, 
+            Download, Table, RefreshCw, Moon, Sun, Sigma, FunctionSquare, ChevronDown, ChevronUp, Cpu
+        } from 'lucide-react';
+        import { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+            Line, ComposedChart, Area, Scatter
+        } from 'recharts';
+
+        // --- MATH UTILS ---
+        
+        const factorial = (n) => {
+            if (n < 0) return NaN;
+            if (n <= 1) return 1;
+            let result = 1;
+            for (let i = 2; i <= n; i++) result *= i;
+            return result;
+        };
+
+        const nCr = (n, r) => {
+            if (r < 0 || r > n) return 0;
+            return factorial(n) / (factorial(r) * factorial(n - r));
+        };
+
+        const nPr = (n, r) => {
+            if (r < 0 || r > n) return 0;
+            return factorial(n) / factorial(n - r);
+        };
+
+        // Distributions
+        const binomialPMF = (k, n, p) => nCr(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+        const poissonPMF = (k, lambda) => (Math.pow(Math.E, -lambda) * Math.pow(lambda, k)) / factorial(k);
+        const normalPDF = (x, mu, sigma) => (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
+        
+        // Error function approximation for Normal CDF
+        const erf = (x) => {
+            const a1 =  0.254829592;
+            const a2 = -0.284496736;
+            const a3 =  1.421413741;
+            const a4 = -1.453152027;
+            const a5 =  1.061405429;
+            const p  =  0.3275911;
+            const sign = (x < 0) ? -1 : 1;
+            x = Math.abs(x);
+            const t = 1.0 / (1.0 + p*x);
+            const y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
+            return sign*y;
+        };
+
+        const normalCDF = (x, mu, sigma) => {
+            return 0.5 * (1 + erf((x - mu) / (sigma * Math.sqrt(2))));
+        };
+
+        // Descriptive Stats
+        const calculateStats = (data, isSample = true) => {
+            if (!data || data.length === 0) return null;
+            const n = data.length;
+            const sum = data.reduce((a, b) => a + b, 0);
+            const mean = sum / n;
+            const sorted = [...data].sort((a, b) => a - b);
+            const median = n % 2 === 0 ? (sorted[n/2 - 1] + sorted[n/2]) / 2 : sorted[Math.floor(n/2)];
+            const min = sorted[0];
+            const max = sorted[n-1];
+            
+            // Mode
+            const counts = {};
+            data.forEach(x => counts[x] = (counts[x] || 0) + 1);
+            let maxFreq = 0;
+            for(let k in counts) if(counts[k] > maxFreq) maxFreq = counts[k];
+            const modes = Object.keys(counts).filter(x => counts[x] === maxFreq).map(Number);
+            
+            // Variance & StdDev
+            const sqDiffs = data.map(x => Math.pow(x - mean, 2));
+            const variance = sqDiffs.reduce((a, b) => a + b, 0) / (isSample ? (n - 1 || 1) : n);
+            const stdDev = Math.sqrt(variance);
+
+            return { n, sum, mean, median, modes, variance, stdDev, min, max, sorted, counts };
+        };
+
+        const createHistogramData = (data, bins = 10) => {
+            if (!data.length) return [];
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+            const width = (max - min) / bins || 1;
+            const hist = Array(bins).fill(0).map((_, i) => ({
+                range: `${(min + i * width).toFixed(1)} - ${(min + (i + 1) * width).toFixed(1)}`,
+                x0: min + i * width,
+                count: 0
+            }));
+            
+            data.forEach(v => {
+                let idx = Math.floor((v - min) / width);
+                if (idx >= bins) idx = bins - 1;
+                hist[idx].count++;
+            });
+            return hist;
+        };
+
+        // --- OPENROUTER AI SERVICE ---
+        const getApiKey = () => localStorage.getItem('OPENROUTER_API_KEY') || '';
+        const getModel = () => localStorage.getItem('OPENROUTER_MODEL') || 'google/gemini-2.0-flash-lite-preview-02-05:free';
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        
+        const callOpenRouterAPI = async (prompt) => {
+            const apiKey = getApiKey();
+            const model = getModel();
+            
+            if (!apiKey) throw new Error("API Key no configurada. Ve a Configuración.");
+
+            const url = "https://openrouter.ai/api/v1/chat/completions";
+            
+            const payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            };
+
+            let attempt = 0;
+            while (attempt < 3) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            "Authorization": `Bearer ${apiKey}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429) {
+                        await delay(2000 * Math.pow(2, attempt));
+                        attempt++; continue;
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        // OpenRouter specific error handling
+                        let msg = data.error.message;
+                        if (msg.includes("credits")) msg = "Sin créditos o modelo no gratuito.";
+                        throw new Error(msg);
+                    }
+                    
+                    return data.choices[0].message.content;
+
+                } catch (e) {
+                    // If it's an API key or credit issue, don't retry
+                    if (e.message.includes('API Key') || e.message.includes('créditos')) throw e;
+                    
+                    attempt++; 
+                    if (attempt >= 3) throw new Error("Error de conexión con OpenRouter: " + e.message);
+                    await delay(1000);
+                }
+            }
+        };
+
+        // --- COMPONENTS ---
+
+        const Sidebar = ({ activeView, onViewChange }) => {
+            const menuItems = [
+                { id: 'calculator', icon: Calculator, label: 'Modelos' },
+                { id: 'tools', icon: FunctionSquare, label: 'Herramientas' },
+                { id: 'data_analysis', icon: Table, label: 'Mis Datos' },
+                { id: 'formulas', icon: BookOpen, label: 'Fórmulas' },
+                { id: 'problem_solver', icon: Brain, label: 'Analizador IA' },
+                { id: 'settings', icon: Settings, label: 'Configuración' },
+                { id: 'help', icon: HelpCircle, label: 'Ayuda' },
+            ];
+
+            return (
+                <aside className="w-20 bg-white border-r border-gray-200 flex flex-col items-center py-6 h-full shadow-sm z-20 shrink-0">
+                    <div className="mb-8 p-2 bg-blue-600 rounded-lg shadow-lg">
+                        <Activity className="text-white" size={24} />
+                    </div>
+                    <nav className="flex-1 w-full flex flex-col gap-4">
+                        {menuItems.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = activeView === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => onViewChange(item.id)}
+                                    className={`w-full flex flex-col items-center justify-center py-3 relative transition-all duration-200 group
+                                        ${isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
+                                >
+                                    {isActive && (
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-r-full" />
+                                    )}
+                                    <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+                                    <span className="text-[10px] font-medium mt-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-10 bg-gray-800 text-white px-2 py-0.5 rounded pointer-events-none whitespace-nowrap z-50">
+                                        {item.label}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </nav>
+                </aside>
+            );
+        };
+
+        const ConsolePanel = ({ logs }) => {
+            const bottomRef = useRef(null);
+            useEffect(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), [logs]);
+
+            return (
+                <div className="bg-[#1e1e1e] rounded-lg shadow-md border border-gray-700 p-4 h-full flex flex-col overflow-hidden font-mono text-sm">
+                    <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
+                        <div className="flex items-center gap-2 text-gray-400">
+                            <Terminal size={14} />
+                            <span className="text-xs font-semibold tracking-wider">SALIDA / RESULTADOS</span>
+                        </div>
+                        <div className="flex gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto console-scrollbar space-y-1 pr-2">
+                        {logs.length === 0 && <span className="text-gray-600 italic">Esperando datos...</span>}
+                        {logs.map((log, index) => (
+                            <div key={index} className={`break-words ${log.includes('❌') ? 'text-red-400' : log.includes('════') ? 'text-blue-400 font-bold' : log.includes('💡') ? 'text-purple-300' : 'text-green-400'}`}>
+                                <span className="text-gray-600 mr-2 select-none">$</span>
+                                {log}
+                            </div>
+                        ))}
+                        <div ref={bottomRef} />
+                    </div>
+                </div>
+            );
+        };
+
+        const ChartsPanel = ({ data, chartType }) => {
+            const chartRef = useRef(null);
+            
+            const handleDownload = async () => {
+                if (chartRef.current) {
+                    try {
+                        const dataUrl = await htmlToImage.toPng(chartRef.current, { backgroundColor: '#ffffff' });
+                        const link = document.createElement('a');
+                        link.download = `pystat-chart-${Date.now()}.png`;
+                        link.href = dataUrl;
+                        link.click();
+                    } catch (error) {
+                        console.error('Error downloading image:', error);
+                    }
+                }
+            };
+
+            if (!data) {
+                return (
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col items-center justify-center text-gray-400 p-8 text-center">
+                        <BarChart2 size={48} className="mb-4 opacity-50" />
+                        <h3 className="text-lg font-medium text-gray-600">Sin datos para visualizar</h3>
+                        <p className="text-sm">Ejecuta un cálculo para generar las gráficas.</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div ref={chartRef} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 h-full flex flex-col relative">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                            <Activity size={18} className="text-blue-600" />
+                            Visualización
+                        </h3>
+                        <button onClick={handleDownload} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 transition-colors" title="Descargar PNG">
+                            <Download size={18} />
+                        </button>
+                    </div>
+                    <div className="flex-1 w-full min-h-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                            {chartType === 'histogram' ? (
+                                <BarChart data={data}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="range" label={{ value: 'Intervalos', position: 'insideBottom', offset: -5 }} tick={{fontSize:11}} />
+                                    <YAxis label={{ value: 'Frecuencia', angle: -90, position: 'insideLeft' }} />
+                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                    <Bar dataKey="count" fill="#2E74B5" name="Frecuencia" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            ) : chartType === 'line' ? (
+                                <ComposedChart data={data}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="index" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Line type="monotone" dataKey="value" stroke="#8884d8" dot={false} strokeWidth={2} />
+                                </ComposedChart>
+                            ) : (
+                                <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                    <XAxis dataKey="x" tick={{fontSize: 12}} />
+                                    <YAxis yAxisId="left" tick={{fontSize: 12}} />
+                                    <YAxis yAxisId="right" orientation="right" tick={{fontSize: 12}} />
+                                    <Tooltip />
+                                    <Legend />
+                                    {data[0]?.prob !== undefined && <Bar yAxisId="left" dataKey="prob" name="Probabilidad" fill="#2E74B5" barSize={20} radius={[4, 4, 0, 0]} />}
+                                    {data[0]?.cdf !== undefined && <Line yAxisId="right" type="monotone" dataKey="cdf" name="Acumulada" stroke="#28A745" strokeWidth={2} dot={{ r: 2 }} />}
+                                    {data[0]?.density !== undefined && <Area yAxisId="left" type="monotone" dataKey="density" name="Densidad" fill="#2E74B5" fillOpacity={0.3} stroke="#2E74B5" />}
+                                </ComposedChart>
+                            )}
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- TOOLS VIEW ---
+        const ToolsView = () => {
+            const [expanded, setExpanded] = useState({ combinatorics: true, zscore: true, prob: true });
+            
+            const [combN, setCombN] = useState(5);
+            const [combR, setCombR] = useState(2);
+            const [combRes, setCombRes] = useState({ fact: '', nPr: '', nCr: '' });
+
+            const [zX, setZX] = useState(12);
+            const [zMu, setZMu] = useState(10);
+            const [zSigma, setZSigma] = useState(2);
+            const [zRes, setZRes] = useState({ z: '', p: '' });
+
+            const renderMath = (tex) => window.katex ? <span dangerouslySetInnerHTML={{ __html: window.katex.renderToString(tex) }} /> : tex;
+
+            const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+
+            const calcCombinatorics = () => {
+                const n = parseInt(combN), r = parseInt(combR);
+                if(isNaN(n) || isNaN(r)) return;
+                setCombRes({
+                    fact: factorial(n),
+                    nPr: nPr(n, r),
+                    nCr: nCr(n, r)
+                });
+            };
+
+            const calcZScore = () => {
+                const x = parseFloat(zX), m = parseFloat(zMu), s = parseFloat(zSigma);
+                if(isNaN(x) || isNaN(m) || isNaN(s) || s === 0) return;
+                const z = (x - m) / s;
+                const p = normalCDF(x, m, s);
+                setZRes({ z: z.toFixed(4), p: p.toFixed(4) });
+            };
+
+            return (
+                <div className="p-6 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                                <FunctionSquare /> Herramientas de Cálculo
+                            </h2>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm">
+                                Calculadoras manuales para resolver problemas paso a paso. Ideal para verificar tus ejercicios.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-6">
+                            {/* Combinatoria Card */}
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all">
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center cursor-pointer" onClick={() => toggle('combinatorics')}>
+                                    <h3 className="font-bold flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                                        <span className="bg-blue-100 dark:bg-blue-900 p-1 rounded text-xs">1</span> Combinatoria
+                                    </h3>
+                                    {expanded.combinatorics ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+                                </div>
+                                
+                                {expanded.combinatorics && (
+                                    <div className="p-6 grid md:grid-cols-2 gap-8">
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div><label className="text-xs font-semibold">n (Total)</label><input type="number" value={combN} onChange={(e)=>setCombN(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
+                                                <div><label className="text-xs font-semibold">r (Selección)</label><input type="number" value={combR} onChange={(e)=>setCombR(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
+                                            </div>
+                                            <button onClick={calcCombinatorics} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Calcular</button>
+                                            
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between border-b dark:border-gray-700 pb-1"><span>Factorial (n!):</span> <span className="font-mono font-bold">{combRes.fact || '-'}</span></div>
+                                                <div className="flex justify-between border-b dark:border-gray-700 pb-1"><span>Permutación (nPr):</span> <span className="font-mono font-bold">{combRes.nPr || '-'}</span></div>
+                                                <div className="flex justify-between"><span>Combinación (nCr):</span> <span className="font-mono font-bold">{combRes.nCr || '-'}</span></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded text-sm space-y-3">
+                                            <h4 className="font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">❓ ¿Cómo se hace?</h4>
+                                            <div>
+                                                <p className="font-semibold text-xs">Factorial:</p>
+                                                <div className="text-xs mb-1 opacity-80">Multiplica todos los enteros desde n hasta 1.</div>
+                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("n! = n \\times (n-1) \\dots \\times 1")}</div>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-xs">Combinación (Orden no importa):</p>
+                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("C(n,r) = \\frac{n!}{r!(n-r)!}")}</div>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-xs">Permutación (Orden importa):</p>
+                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("P(n,r) = \\frac{n!}{(n-r)!}")}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Z-Score Card */}
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all">
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center cursor-pointer" onClick={() => toggle('zscore')}>
+                                    <h3 className="font-bold flex items-center gap-2 text-green-700 dark:text-green-300">
+                                        <span className="bg-green-100 dark:bg-green-900 p-1 rounded text-xs">2</span> Estandarización (Z-Score)
+                                    </h3>
+                                    {expanded.zscore ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+                                </div>
+                                
+                                {expanded.zscore && (
+                                    <div className="p-6 grid md:grid-cols-2 gap-8">
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div><label className="text-xs font-semibold">x (Valor)</label><input type="number" value={zX} onChange={(e)=>setZX(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
+                                                <div><label className="text-xs font-semibold">μ (Media)</label><input type="number" value={zMu} onChange={(e)=>setZMu(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
+                                                <div><label className="text-xs font-semibold">σ (Desv)</label><input type="number" value={zSigma} onChange={(e)=>setZSigma(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
+                                            </div>
+                                            <button onClick={calcZScore} className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Calcular Z</button>
+                                            
+                                            <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded flex justify-between items-center">
+                                                <span className="font-bold text-gray-600 dark:text-gray-300">Valor Z:</span>
+                                                <span className="font-mono text-xl font-bold text-green-600 dark:text-green-400">{zRes.z || '--'}</span>
+                                            </div>
+                                            <div className="text-xs text-center text-gray-500 dark:text-gray-400">
+                                                Probabilidad Acumulada P(Z &lt; {zRes.z || 'z'}): <strong>{zRes.p || '--'}</strong>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-green-50 dark:bg-green-900/10 p-4 rounded text-sm space-y-3">
+                                            <h4 className="font-bold text-green-800 dark:text-green-200 flex items-center gap-2">❓ ¿Cómo se hace?</h4>
+                                            <p className="text-xs opacity-90">El puntaje Z indica cuántas desviaciones estándar está un valor por encima o por debajo de la media.</p>
+                                            <div className="font-mono text-sm bg-white dark:bg-gray-800 p-3 rounded border dark:border-gray-600 text-center my-2">
+                                                {renderMath("Z = \\frac{x - \\mu}{\\sigma}")}
+                                            </div>
+                                            <p className="text-xs italic opacity-80">
+                                                Ejemplo: Si la media es 10 y la desviación es 2, un valor de 12 tiene un Z de 1.
+                                                (12-10)/2 = 1.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- VIEWS ---
+
+        const DataAnalysisView = ({ onAnalyze }) => {
+            const [inputData, setInputData] = useState('');
+            const [isSample, setIsSample] = useState(true);
+            const [chartType, setChartType] = useState('histogram');
+
+            const loadExample = (type) => {
+                if (type === 'grades') setInputData('85, 78, 92, 88, 76, 95, 82, 90, 87, 79, 91, 84, 88, 93, 77');
+                if (type === 'sales') setInputData('1200, 1350, 980, 1420, 1150, 1680, 1290, 1510, 1380, 1220, 1450, 1180');
+            };
+
+            const handleProcess = () => {
+                const cleanData = inputData.split(/[,\s\n]+/).map(Number).filter(n => !isNaN(n));
+                if (cleanData.length === 0) return;
+                onAnalyze(cleanData, isSample, chartType);
+            };
+
+            return (
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="mb-4 flex gap-2">
+                        <button onClick={() => loadExample('grades')} className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200 transition">📚 Notas</button>
+                        <button onClick={() => loadExample('sales')} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 transition">💰 Ventas</button>
+                        <button onClick={() => setInputData('')} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition ml-auto flex items-center gap-1"><Eraser size={12}/> Limpiar</button>
+                    </div>
+                    
+                    <textarea 
+                        value={inputData}
+                        onChange={(e) => setInputData(e.target.value)}
+                        placeholder="Ingresa datos: 12, 15, 12, 18..." 
+                        className="w-full h-32 p-3 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none mb-4 resize-none dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                    />
+
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Cálculo Varianza</label>
+                            <div className="flex gap-3 text-sm text-gray-700 dark:text-gray-300">
+                                <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={isSample} onChange={() => setIsSample(true)} /> Muestra (n-1)</label>
+                                <label className="flex items-center gap-1 cursor-pointer"><input type="radio" checked={!isSample} onChange={() => setIsSample(false)} /> Población (N)</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Gráfico</label>
+                            <select value={chartType} onChange={(e) => setChartType(e.target.value)} className="w-full px-2 py-1 border rounded text-sm dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                                <option value="histogram">Histograma</option>
+                                <option value="line">Línea (Secuencia)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button onClick={handleProcess} className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-md bg-[#2E74B5] text-white font-medium hover:bg-blue-700 shadow-md transition-all active:transform active:scale-95">
+                        <Activity size={18} />
+                        <span>Analizar Datos</span>
+                    </button>
+                </div>
+            );
+        };
+
+        const ReferenceView = () => {
+            const renderMath = (tex) => {
+                if (window.katex) {
+                    return <span dangerouslySetInnerHTML={{ __html: window.katex.renderToString(tex) }} />;
+                }
+                return <span>{tex}</span>;
+            };
+
+            return (
+                <div className="p-6 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+                    <div className="max-w-4xl mx-auto">
+                        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                            <BookOpen className="text-blue-600" /> Referencia de Fórmulas
+                        </h2>
+                        <p className="text-gray-600 dark:text-gray-400 mb-8 text-sm">Guía rápida de distribuciones discretas y funciones auxiliares.</p>
+
+                        <div className="grid gap-8 md:grid-cols-2">
+                            {/* Binomial */}
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2"><Sigma size={18}/> Distribución Binomial</h3>
+                                
+                                <div className="mb-4">
+                                    <h4 className="font-semibold text-xs uppercase text-gray-500 mb-2">Función de Masa (PMF)</h4>
+                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded text-center overflow-x-auto border border-gray-100 dark:border-gray-700">
+                                        {renderMath("P(X = k) = C(n,k) \\cdot p^k \\cdot (1-p)^{n-k}")}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                                    <div>
+                                        <h4 className="font-semibold mb-1 text-xs text-gray-500 uppercase">Parámetros</h4>
+                                        <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                            <li><span className="font-mono font-bold text-blue-600">n</span>: número de ensayos</li>
+                                            <li><span className="font-mono font-bold text-blue-600">p</span>: probabilidad éxito</li>
+                                            <li><span className="font-mono font-bold text-blue-600">k</span>: número de éxitos</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold mb-1 text-xs text-gray-500 uppercase">Estadísticas</h4>
+                                        <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                            <li>Media: {renderMath("\\mu = n \\cdot p")}</li>
+                                            <li>Var: {renderMath("\\sigma^2 = n \\cdot p \\cdot (1-p)")}</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded mb-3 text-xs border border-blue-100 dark:border-blue-800">
+                                    <strong className="text-blue-700 dark:text-blue-300 block mb-1">💡 Ejemplo de Uso</strong>
+                                    Lanzar 10 monedas (n=10, p=0.5): ¿Probabilidad de obtener exactamente 5 caras?
+                                </div>
+
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                    <strong className="text-xs uppercase text-gray-500 block mb-1">📋 Aplicaciones</strong>
+                                    <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
+                                        <li>Control de calidad: productos defectuosos</li>
+                                        <li>Medicina: eficacia de tratamientos</li>
+                                        <li>Encuestas: proporción de respuestas</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Poisson */}
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <h3 className="text-lg font-bold text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-2"><Activity size={18}/> Distribución de Poisson</h3>
+                                
+                                <div className="mb-4">
+                                    <h4 className="font-semibold text-xs uppercase text-gray-500 mb-2">Función de Masa (PMF)</h4>
+                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded text-center overflow-x-auto border border-gray-100 dark:border-gray-700">
+                                        {renderMath("P(X = k) = \\frac{\\lambda^k \\cdot e^{-\\lambda}}{k!}")}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                                    <div>
+                                        <h4 className="font-semibold mb-1 text-xs text-gray-500 uppercase">Parámetros</h4>
+                                        <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                            <li><span className="font-mono font-bold text-purple-600">λ</span>: tasa promedio</li>
+                                            <li><span className="font-mono font-bold text-purple-600">k</span>: número de eventos</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold mb-1 text-xs text-gray-500 uppercase">Estadísticas</h4>
+                                        <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                            <li>Media: {renderMath("\\mu = \\lambda")}</li>
+                                            <li>Var: {renderMath("\\sigma^2 = \\lambda")}</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div className="bg-purple-50 dark:bg-purple-900/20 p-3 rounded mb-3 text-xs border border-purple-100 dark:border-purple-800">
+                                    <strong className="text-purple-700 dark:text-purple-300 block mb-1">💡 Ejemplo de Uso</strong>
+                                    Recibo 3 emails/hora en promedio (λ=3): ¿Probabilidad de recibir 5 emails la próxima hora?
+                                </div>
+
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                    <strong className="text-xs uppercase text-gray-500 block mb-1">📋 Aplicaciones</strong>
+                                    <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
+                                        <li>Call centers: llamadas por hora</li>
+                                        <li>Tráfico: accidentes en carreteras</li>
+                                        <li>Servidores web: visitas por minuto</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Aux Functions */}
+                        <div className="mt-8 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                            <h3 className="text-md font-bold mb-4 text-gray-700 dark:text-gray-300 uppercase tracking-wider text-sm">Funciones Auxiliares</h3>
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2 text-sm">Factorial</h4>
+                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded mb-2 text-center border border-gray-100 dark:border-gray-700">
+                                        {renderMath("n! = n \\times (n-1) \\times ... \\times 1")}
+                                    </div>
+                                    <p className="text-xs text-gray-500 italic text-center">Ejemplo: 5! = 120</p>
+                                </div>
+                                <div>
+                                    <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2 text-sm">Coeficiente Binomial</h4>
+                                    <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded mb-2 text-center border border-gray-100 dark:border-gray-700">
+                                        {renderMath("C(n,k) = \\frac{n!}{k!(n-k)!}")}
+                                    </div>
+                                    <p className="text-xs text-gray-500 italic text-center">Ejemplo: C(5,2) = 10</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const HelpView = () => (
+            <div className="p-6 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+                <div className="max-w-4xl mx-auto">
+                    <div className="mb-8">
+                        <h2 className="text-2xl font-bold mb-2 flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                            <HelpCircle /> Centro de Ayuda
+                        </h2>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">Guías, tutoriales y recursos para usar la calculadora.</p>
+                    </div>
+
+                    <div className="space-y-8">
+                        {/* Inicio Rápido */}
+                        <section>
+                            <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">🚀 Inicio Rápido</h3>
+                            <div className="grid md:grid-cols-3 gap-4">
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold mb-3">1</div>
+                                    <h4 className="font-semibold mb-2 text-sm">Selecciona una Distribución</h4>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Elige entre Binomial (experimentos con éxito/fracaso) o Poisson (eventos raros).</p>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold mb-3">2</div>
+                                    <h4 className="font-semibold mb-2 text-sm">Ingresa los Parámetros</h4>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Para Binomial: n (ensayos) y p (probabilidad). Para Poisson: λ (tasa promedio).</p>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                                    <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold mb-3">3</div>
+                                    <h4 className="font-semibold mb-2 text-sm">Presiona Calcular</h4>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Observa las estadísticas en la consola y explora los gráficos PMF, CDF y Tabla.</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Preguntas Frecuentes */}
+                        <section>
+                            <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">❓ Preguntas Frecuentes</h3>
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+                                {[
+                                    { q: "¿Cuál es la diferencia entre PMF y CDF?", a: "PMF (Masa) es la probabilidad de un valor exacto (X=k). CDF (Acumulada) es la probabilidad de un valor menor o igual (X≤k)." },
+                                    { q: "¿Cuándo usar Binomial vs Poisson?", a: "Usa Binomial para un número fijo de intentos (n). Usa Poisson para tasas promedio en un tiempo/espacio continuo." },
+                                    { q: "¿Para qué sirve el parámetro k opcional?", a: "Si ingresas k, la app calculará la probabilidad específica P(X=k) y acumulada P(X≤k)." },
+                                    { q: "¿Necesito una API Key de Gemini?", a: "Es opcional. Sin ella, la calculadora funciona igual, pero no tendrás explicaciones con IA." }
+                                ].map((item, i) => (
+                                    <div key={i} className="p-4">
+                                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-200 mb-1">{item.q}</h4>
+                                        <p className="text-xs text-gray-600 dark:text-gray-400">{item.a}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Ejemplos Prácticos */}
+                        <section>
+                            <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">💡 Ejemplos Prácticos</h3>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
+                                    <h4 className="font-bold text-orange-800 dark:text-orange-300 mb-2 text-sm">🎲 Lanzamiento de Monedas</h4>
+                                    <p className="text-xs text-gray-700 dark:text-gray-300 mb-2"><strong>Problema:</strong> Si lanzo 20 monedas, ¿cuál es la probabilidad de obtener exactamente 10 caras?</p>
+                                    <ul className="text-xs text-gray-600 dark:text-gray-400 list-disc list-inside">
+                                        <li>Distribución: Binomial</li>
+                                        <li>n = 20 (lanzamientos)</li>
+                                        <li>p = 0.5 (moneda justa)</li>
+                                        <li>k = 10 (caras deseadas)</li>
+                                    </ul>
+                                </div>
+                                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800">
+                                    <h4 className="font-bold text-green-800 dark:text-green-300 mb-2 text-sm">📞 Centro de Llamadas</h4>
+                                    <p className="text-xs text-gray-700 dark:text-gray-300 mb-2"><strong>Problema:</strong> Un call center recibe 5 llamadas/hora en promedio. ¿Probabilidad de recibir más de 7 llamadas?</p>
+                                    <ul className="text-xs text-gray-600 dark:text-gray-400 list-disc list-inside">
+                                        <li>Distribución: Poisson</li>
+                                        <li>λ = 5 (promedio/hora)</li>
+                                        <li>Calcular P(X≤7) y restar de 1</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Recursos Adicionales */}
+                        <section>
+                            <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white border-b dark:border-gray-700 pb-2">🔗 Recursos Adicionales</h3>
+                            <div className="flex flex-wrap gap-3">
+                                <a href="https://es.wikipedia.org/wiki/Distribuci%C3%B3n_binomial" target="_blank" rel="noreferrer" className="text-xs bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-gray-700 dark:text-gray-300">Distribución Binomial - Wikipedia</a>
+                                <a href="https://es.wikipedia.org/wiki/Distribuci%C3%B3n_de_Poisson" target="_blank" rel="noreferrer" className="text-xs bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-gray-700 dark:text-gray-300">Distribución de Poisson - Wikipedia</a>
+                                <span className="text-xs bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded opacity-50 cursor-not-allowed text-gray-700 dark:text-gray-300">Código Fuente - GitHub</span>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const SettingsView = ({ darkMode, setDarkMode }) => {
+            const [key, setKey] = useState(getApiKey());
+            const [model, setModel] = useState(getModel());
+            const [saved, setSaved] = useState(false);
+
+            const saveKey = () => {
+                localStorage.setItem('OPENROUTER_API_KEY', key);
+                localStorage.setItem('OPENROUTER_MODEL', model);
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+            };
+
+            return (
+                <div className="p-8 h-full flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900">
+                    <div className="max-w-md w-full bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Settings className="text-gray-700 dark:text-gray-300" size={24} />
+                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Configuración</h2>
+                        </div>
+                        
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tema de la Aplicación</label>
+                            <button 
+                                onClick={() => setDarkMode(!darkMode)}
+                                className={`w-full py-2 px-4 rounded-md border flex items-center justify-center gap-2 transition-colors ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-gray-100 text-gray-800 border-gray-300'}`}
+                            >
+                                {darkMode ? <Moon size={18}/> : <Sun size={18}/>}
+                                {darkMode ? 'Modo Oscuro' : 'Modo Claro'}
+                            </button>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">OpenRouter API Key</label>
+                            <input 
+                                type="password" 
+                                value={key} 
+                                onChange={(e) => setKey(e.target.value)}
+                                placeholder="sk-or-v1-..."
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">Obtén una en <a href="https://openrouter.ai/keys" target="_blank" className="text-blue-600 hover:underline">openrouter.ai</a></p>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modelo IA</label>
+                            <input 
+                                type="text" 
+                                value={model} 
+                                onChange={(e) => setModel(e.target.value)}
+                                placeholder="google/gemini-2.0-flash-lite-preview-02-05:free"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <p className="text-xs text-gray-500 mt-2 flex items-center gap-1"><Cpu size={12}/> ID del modelo (ej: google/gemini-2.0-flash-lite-preview-02-05:free)</p>
+                        </div>
+
+                        <button 
+                            onClick={saveKey}
+                            className={`w-full py-2.5 rounded-md text-white font-medium transition-all ${saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        >
+                            {saved ? '¡Guardado!' : 'Guardar Configuración'}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MAIN APP ---
+
+        const App = () => {
+            const [activeView, setActiveView] = useState('calculator');
+            const [status, setStatus] = useState('READY');
+            const [logs, setLogs] = useState([]);
+            const [darkMode, setDarkMode] = useState(false);
+            
+            // Calculator State
+            const [distType, setDistType] = useState('BINOMIAL'); // BINOMIAL, POISSON, NORMAL
+            const [chartData, setChartData] = useState(null);
+            const [currentChartType, setCurrentChartType] = useState('distribution'); // distribution, histogram, line
+            
+            // Params
+            const [params, setParams] = useState({ n: 10, p: 0.5, k: '', lambda: 3, mu: 0, sigma: 1 });
+
+            useEffect(() => {
+                if (darkMode) document.body.classList.add('dark');
+                else document.body.classList.remove('dark');
+            }, [darkMode]);
+
+            const addLog = (message) => setLogs(prev => [...prev, message]);
+
+            // --- CALCULATOR LOGIC ---
+            const handleCalcDistribution = async () => {
+                setStatus('PROCESSING');
+                setLogs([]);
+                await delay(300); // UI feel
+
+                try {
+                    let data = [], title = "";
+                    let stats = {};
+                    
+                    if (distType === 'BINOMIAL') {
+                        const { n, p, k } = params;
+                        if (n > 200) throw new Error("n muy grande para visualizar (max 200)");
+                        
+                        let cumulative = 0;
+                        for (let i = 0; i <= n; i++) {
+                            const prob = binomialPMF(i, Number(n), Number(p));
+                            cumulative += prob;
+                            data.push({ x: i, prob, cdf: cumulative });
+                        }
+                        title = `Binomial(n=${n}, p=${p})`;
+                        stats = { mean: n * p, variance: n * p * (1-p) };
+                        
+                        // Specific K
+                        if (k !== '') {
+                            const val = Number(k);
+                            const pK = binomialPMF(val, Number(n), Number(p));
+                            stats.specific = { k: val, prob: pK };
+                        }
+
+                    } else if (distType === 'POISSON') {
+                        const { lambda, k } = params;
+                        let cumulative = 0;
+                        // Cutoff logic
+                        const maxX = Math.ceil(Number(lambda) + 4 * Math.sqrt(Number(lambda))) + 2;
+                        
+                        for (let i = 0; i <= maxX; i++) {
+                            const prob = poissonPMF(i, Number(lambda));
+                            cumulative += prob;
+                            data.push({ x: i, prob, cdf: cumulative });
+                        }
+                        title = `Poisson(λ=${lambda})`;
+                        stats = { mean: Number(lambda), variance: Number(lambda) };
+                        if (k !== '') {
+                             stats.specific = { k: Number(k), prob: poissonPMF(Number(k), Number(lambda)) };
+                        }
+
+                    } else if (distType === 'NORMAL') {
+                        const { mu, sigma } = params;
+                        const m = Number(mu), s = Number(sigma);
+                        if (s <= 0) throw new Error("Sigma debe ser > 0");
+                        
+                        // Generate continuous points
+                        const start = m - 4 * s;
+                        const end = m + 4 * s;
+                        const step = (end - start) / 100;
+                        
+                        for (let x = start; x <= end; x += step) {
+                            data.push({ x: parseFloat(x.toFixed(2)), density: normalPDF(x, m, s) });
+                        }
+                        title = `Normal(μ=${m}, σ=${s})`;
+                        stats = { mean: m, variance: s*s };
+                    }
+
+                    // Logging
+                    addLog('═══════════════════════════════════════════');
+                    addLog(`📊 ${title}`);
+                    addLog('═══════════════════════════════════════════');
+                    addLog(`Media (μ): ${stats.mean.toFixed(4)}`);
+                    addLog(`Varianza (σ²): ${stats.variance.toFixed(4)}`);
+                    
+                    if (stats.specific) {
+                        addLog('');
+                        addLog(`Probabilidad P(X=${stats.specific.k}): ${(stats.specific.prob * 100).toFixed(4)}%`);
+                    }
+
+                    setChartData(data);
+                    setCurrentChartType('distribution');
+
+                    // AI Insight
+                    const insight = await callOpenRouterAPI(`Analiza brevemente la distribución ${title}. Media: ${stats.mean}, Varianza: ${stats.variance}. Dame 1 ejemplo real.`);
+                    addLog(''); addLog(`💡 ${insight}`);
+                    setStatus('READY');
+
+                } catch (error) {
+                    addLog(`❌ Error: ${error.message}`);
+                    setStatus('ERROR');
+                }
+            };
+
+            // --- DATA ANALYSIS LOGIC ---
+            const handleDataAnalysis = async (data, isSample, type) => {
+                setStatus('PROCESSING');
+                setLogs([]);
+                await delay(300);
+
+                try {
+                    const stats = calculateStats(data, isSample);
+                    
+                    addLog('═══════════════════════════════════════════');
+                    addLog('📈 ANÁLISIS DE DATOS CRUDOS');
+                    addLog('═══════════════════════════════════════════');
+                    addLog(`n: ${stats.n}`);
+                    addLog(`Suma: ${stats.sum.toFixed(2)}`);
+                    addLog(`Media: ${stats.mean.toFixed(2)}`);
+                    addLog(`Mediana: ${stats.median.toFixed(2)}`);
+                    addLog(`Moda: ${stats.modes.join(', ') || 'Sin moda'}`);
+                    addLog(`Varianza (${isSample ? 'n-1' : 'N'}): ${stats.variance.toFixed(2)}`);
+                    addLog(`Desv. Estándar: ${stats.stdDev.toFixed(2)}`);
+                    addLog(`Mín / Máx: ${stats.min} / ${stats.max}`);
+
+                    let cData = [];
+                    if (type === 'histogram') {
+                        cData = createHistogramData(data, 10);
+                    } else if (type === 'line') {
+                        cData = data.map((v, i) => ({ index: i+1, value: v }));
+                    }
+                    setChartData(cData);
+                    setCurrentChartType(type);
+                    
+                    setStatus('READY');
+
+                } catch (e) {
+                    addLog(`❌ Error: ${e.message}`);
+                    setStatus('ERROR');
+                }
+            };
+
+            // --- PROBLEM SOLVER ---
+            const handleProblemSolve = async (text) => {
+                if(!text.trim()) return;
+                setStatus('PROCESSING');
+                setLogs([]);
+                addLog('🧠 Analizando problema...');
+                
+                try {
+                    const res = await callOpenRouterAPI(`
+                        Actúa como profesor de estadística. Resuelve: "${text}". 
+                        1. Identifica el modelo (Binomial, Poisson, Normal, o datos). 
+                        2. Extrae datos. 
+                        3. Resuelve paso a paso con fórmulas LaTeX ($...$).
+                    `);
+                    
+                    addLog('');
+                    const lines = res.split('\n');
+                    lines.forEach(l => {
+                        if (l.trim()) addLog(l);
+                    });
+                    setStatus('READY');
+                } catch(e) {
+                    addLog(`❌ Error IA: ${e.message}`);
+                    setStatus('ERROR');
+                }
+            };
+
+            const renderMainContent = () => {
+                switch(activeView) {
+                    case 'settings': return <SettingsView darkMode={darkMode} setDarkMode={setDarkMode} />;
+                    case 'formulas': return <ReferenceView />;
+                    case 'help': return <HelpView />;
+                    case 'tools': return <ToolsView />;
+                    case 'problem_solver': 
+                        return (
+                            <div className="p-6 h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+                                <div className="max-w-4xl mx-auto w-full flex flex-col gap-4 h-full">
+                                    <h2 className="text-xl font-bold flex items-center gap-2 dark:text-white"><Brain className="text-purple-500"/> Analizador de Problemas</h2>
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border dark:border-gray-700">
+                                        <textarea id="problemInput" className="w-full h-24 p-2 border rounded resize-none dark:bg-gray-700 dark:text-white" placeholder="Ej: Lanzo 5 monedas..."></textarea>
+                                        <button onClick={() => handleProblemSolve(document.getElementById('problemInput').value)} className="mt-2 bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 w-full">Resolver con IA</button>
+                                    </div>
+                                    <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow border dark:border-gray-700 overflow-hidden">
+                                        <ConsolePanel logs={logs} />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    default:
+                        // Combined view for Calculator and Data Analysis
+                        return (
+                            <>
+                                <header className="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shadow-sm shrink-0">
+                                    <div>
+                                        <h1 className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">PyStat Visualizer</h1>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Estadística & Probabilidad (OpenRouter)</p>
+                                    </div>
+                                    <div className="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-800">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${status === 'PROCESSING' ? 'bg-yellow-400 animate-pulse' : status === 'ERROR' ? 'bg-red-500' : 'bg-[#28A745]'}`}></div>
+                                        <span className="text-xs font-semibold text-[#28A745] dark:text-green-400">{status === 'PROCESSING' ? 'Calculando...' : 'Listo'}</span>
+                                    </div>
+                                </header>
+
+                                <div className="flex-1 p-4 grid grid-cols-12 grid-rows-6 gap-4 overflow-hidden min-h-0">
+                                    {/* INPUT PANEL */}
+                                    <div className="col-span-12 md:col-span-4 row-span-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex flex-col h-full overflow-y-auto">
+                                        {activeView === 'calculator' ? (
+                                            <>
+                                                <div className="mb-4 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold border-b pb-2"><Calculator size={18}/> Modelos Teóricos</div>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-gray-500 mb-1">Distribución</label>
+                                                        <select value={distType} onChange={(e) => setDistType(e.target.value)} className="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600">
+                                                            <option value="BINOMIAL">Binomial</option>
+                                                            <option value="POISSON">Poisson</option>
+                                                            <option value="NORMAL">Normal (Gaussiana)</option>
+                                                        </select>
+                                                    </div>
+                                                    
+                                                    {distType === 'BINOMIAL' && (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div><label className="text-xs">n (Ensayos)</label><input type="number" value={params.n} onChange={e=>setParams({...params, n:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                            <div><label className="text-xs">p (Probabilidad)</label><input type="number" step="0.1" value={params.p} onChange={e=>setParams({...params, p:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                            <div className="col-span-2"><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm" placeholder="Valor exacto"/></div>
+                                                        </div>
+                                                    )}
+                                                    {distType === 'POISSON' && (
+                                                        <div className="space-y-2">
+                                                            <div><label className="text-xs">λ (Lambda)</label><input type="number" step="0.1" value={params.lambda} onChange={e=>setParams({...params, lambda:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                            <div><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                        </div>
+                                                    )}
+                                                    {distType === 'NORMAL' && (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div><label className="text-xs">μ (Media)</label><input type="number" step="0.1" value={params.mu} onChange={e=>setParams({...params, mu:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                            <div><label className="text-xs">σ (Desv. Est.)</label><input type="number" step="0.1" value={params.sigma} onChange={e=>setParams({...params, sigma:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                        </div>
+                                                    )}
+
+                                                    <button onClick={handleCalcDistribution} disabled={status==='PROCESSING'} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition flex justify-center items-center gap-2">
+                                                        <Play size={16} /> Calcular Modelo
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : activeView === 'data_analysis' ? (
+                                            <>
+                                                <div className="mb-4 flex items-center gap-2 text-green-600 dark:text-green-400 font-bold border-b pb-2"><Table size={18}/> Mis Datos</div>
+                                                <DataAnalysisView onAnalyze={handleDataAnalysis} />
+                                            </>
+                                        ) : (
+                                            <div className="text-center text-gray-500 mt-10">Selecciona una herramienta del menú lateral</div>
+                                        )}
+                                    </div>
+
+                                    {/* OUTPUT PANELS */}
+                                    <div className="col-span-12 md:col-span-8 row-span-2 min-h-0">
+                                        <ConsolePanel logs={logs} />
+                                    </div>
+                                    <div className="col-span-12 md:col-span-8 row-span-4 min-h-0 pb-2">
+                                        <ChartsPanel data={chartData} chartType={currentChartType} />
+                                    </div>
+                                </div>
+                            </>
+                        );
+                }
+            };
+
+            return (
+                <div className="flex h-screen w-full bg-gray-100 dark:bg-gray-900 font-sans overflow-hidden">
+                    <Sidebar activeView={activeView} onViewChange={setActiveView} />
+                    <main className="flex-1 h-full flex flex-col relative overflow-hidden transition-colors">
+                        {renderMainContent()}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
