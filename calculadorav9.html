@@ -77,7 +77,7 @@
         import { 
             Play, CheckCircle, Calculator, BarChart2, BookOpen, Settings, HelpCircle, 
             Terminal, Activity, AlertCircle, Copy, Brain, MessageSquare, Eraser, 
-            Download, Table, RefreshCw, Moon, Sun, Sigma, FunctionSquare, ChevronDown, ChevronUp
+            Download, Table, RefreshCw, Moon, Sun, Sigma, FunctionSquare, ChevronDown, ChevronUp, TrendingUp
         } from 'lucide-react';
         import { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -154,6 +154,24 @@
             return { n, sum, mean, median, modes, variance, stdDev, min, max, sorted, counts };
         };
 
+        const calculateLinearRegression = (xData, yData) => {
+            if (xData.length !== yData.length || xData.length === 0) return null;
+            const n = xData.length;
+            const sumX = xData.reduce((a, b) => a + b, 0);
+            const sumY = yData.reduce((a, b) => a + b, 0);
+            const sumXY = xData.map((x, i) => x * yData[i]).reduce((a, b) => a + b, 0);
+            const sumX2 = xData.map(x => x * x).reduce((a, b) => a + b, 0);
+            const sumY2 = yData.map(y => y * y).reduce((a, b) => a + b, 0);
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - Math.pow(sumX, 2));
+            const intercept = (sumY - slope * sumX) / n;
+            const r = (n * sumXY - sumX * sumY) / Math.sqrt((n * sumX2 - Math.pow(sumX, 2)) * (n * sumY2 - Math.pow(sumY, 2)));
+
+            const line = xData.map(x => ({ x, y: slope * x + intercept }));
+
+            return { slope, intercept, r, r2: r * r, line };
+        };
+
         const createHistogramData = (data, bins = 10) => {
             if (!data.length) return [];
             const min = Math.min(...data);
@@ -211,6 +229,7 @@
         const Sidebar = ({ activeView, onViewChange }) => {
             const menuItems = [
                 { id: 'calculator', icon: Calculator, label: 'Modelos' },
+                { id: 'linear_regression', icon: TrendingUp, label: 'Regresión Lineal' },
                 { id: 'tools', icon: FunctionSquare, label: 'Herramientas' }, // New
                 { id: 'data_analysis', icon: Table, label: 'Mis Datos' },
                 { id: 'formulas', icon: BookOpen, label: 'Fórmulas' },
@@ -232,6 +251,7 @@
                                 <button
                                     key={item.id}
                                     onClick={() => onViewChange(item.id)}
+                                    aria-label={item.label}
                                     className={`w-full flex flex-col items-center justify-center py-3 relative transition-all duration-200 group
                                         ${isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
                                 >
@@ -336,6 +356,15 @@
                                     <YAxis />
                                     <Tooltip />
                                     <Line type="monotone" dataKey="value" stroke="#8884d8" dot={false} strokeWidth={2} />
+                                </ComposedChart>
+                            ) : chartType === 'scatter' ? (
+                                <ComposedChart data={data.points} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="x" name="X" />
+                                    <YAxis type="number" dataKey="y" name="Y" />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Scatter name="Datos" dataKey="y" fill="#8884d8" />
+                                    <Line data={data.line} dataKey="y" stroke="#ff7300" dot={false} strokeWidth={2} name="Línea de Regresión" />
                                 </ComposedChart>
                             ) : (
                                 <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
@@ -502,6 +531,52 @@
         };
 
         // --- VIEWS ---
+
+        const LinearRegressionView = ({ onAnalyze }) => {
+            const [xData, setXData] = useState('');
+            const [yData, setYData] = useState('');
+
+            const loadExample = () => {
+                setXData('1, 2, 3, 4, 5, 6, 7, 8, 9, 10');
+                setYData('2, 4.1, 5.8, 8, 10.2, 12.1, 14.2, 16, 18, 20.1');
+            };
+
+            const handleProcess = () => {
+                const cleanX = xData.split(/[,\s\n]+/).map(Number).filter(n => !isNaN(n));
+                const cleanY = yData.split(/[,\s\n]+/).map(Number).filter(n => !isNaN(n));
+                if (cleanX.length === 0 || cleanY.length === 0) return;
+                onAnalyze(cleanX, cleanY);
+            };
+
+            return (
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="mb-4 flex gap-2">
+                        <button onClick={loadExample} className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-200 transition">📊 Ejemplo</button>
+                        <button onClick={() => { setXData(''); setYData(''); }} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition ml-auto flex items-center gap-1"><Eraser size={12} /> Limpiar</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 flex-1">
+                        <textarea
+                            value={xData}
+                            onChange={(e) => setXData(e.target.value)}
+                            placeholder="Datos de X: 1, 2, 3..."
+                            className="w-full h-full p-3 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                        />
+                        <textarea
+                            value={yData}
+                            onChange={(e) => setYData(e.target.value)}
+                            placeholder="Datos de Y: 2, 4, 6..."
+                            className="w-full h-full p-3 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                        />
+                    </div>
+
+                    <button onClick={handleProcess} className="w-full mt-4 flex items-center justify-center space-x-2 px-4 py-2.5 rounded-md bg-[#2E74B5] text-white font-medium hover:bg-blue-700 shadow-md transition-all active:transform active:scale-95">
+                        <TrendingUp size={18} />
+                        <span>Calcular Regresión</span>
+                    </button>
+                </div>
+            );
+        };
 
         const DataAnalysisView = ({ onAnalyze }) => {
             const [inputData, setInputData] = useState('');
@@ -983,6 +1058,34 @@
                 }
             };
 
+            // --- LINEAR REGRESSION LOGIC ---
+            const handleLinearRegression = async (xData, yData) => {
+                setStatus('PROCESSING');
+                setLogs([]);
+                await delay(300);
+
+                try {
+                    const stats = calculateLinearRegression(xData, yData);
+                    if (!stats) throw new Error("Los datos de X e Y deben tener la misma longitud.");
+
+                    addLog('═══════════════════════════════════════════');
+                    addLog('📈 ANÁLISIS DE REGRESIÓN LINEAL');
+                    addLog('═══════════════════════════════════════════');
+                    addLog(`Ecuación: y = ${stats.slope.toFixed(4)}x + ${stats.intercept.toFixed(4)}`);
+                    addLog(`Coef. Correlación (r): ${stats.r.toFixed(4)}`);
+                    addLog(`Coef. Determinación (r²): ${stats.r2.toFixed(4)}`);
+
+                    const combinedData = xData.map((x, i) => ({ x, y: yData[i] }));
+                    setChartData({ points: combinedData, line: stats.line });
+                    setCurrentChartType('scatter');
+
+                    setStatus('READY');
+                } catch (e) {
+                    addLog(`❌ Error: ${e.message}`);
+                    setStatus('ERROR');
+                }
+            };
+
             // --- PROBLEM SOLVER ---
             const handleProblemSolve = async (text) => {
                 if(!text.trim()) return;
@@ -1094,6 +1197,11 @@
                                             <>
                                                 <div className="mb-4 flex items-center gap-2 text-green-600 dark:text-green-400 font-bold border-b pb-2"><Table size={18}/> Mis Datos</div>
                                                 <DataAnalysisView onAnalyze={handleDataAnalysis} />
+                                            </>
+                                        ) : activeView === 'linear_regression' ? (
+                                            <>
+                                                <div className="mb-4 flex items-center gap-2 text-yellow-600 dark:text-yellow-400 font-bold border-b pb-2"><TrendingUp size={18}/> Regresión Lineal</div>
+                                                <LinearRegressionView onAnalyze={handleLinearRegression} />
                                             </>
                                         ) : (
                                             <div className="text-center text-gray-500 mt-10">Selecciona una herramienta del menú lateral</div>
