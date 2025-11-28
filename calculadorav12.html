@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PyStat Visualizer - Ultimate Edition (OpenRouter)</title>
+    <title>CalCulo - Ultimate Edition</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -77,7 +77,7 @@
         import { 
             Play, CheckCircle, Calculator, BarChart2, BookOpen, Settings, HelpCircle, 
             Terminal, Activity, AlertCircle, Copy, Brain, MessageSquare, Eraser, 
-            Download, Table, RefreshCw, Moon, Sun, Sigma, FunctionSquare, ChevronDown, ChevronUp, Cpu
+            Download, Table, RefreshCw, Moon, Sun, Sigma, FunctionSquare, ChevronDown, ChevronUp, TrendingUp, Cpu
         } from 'lucide-react';
         import { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -154,6 +154,41 @@
             return { n, sum, mean, median, modes, variance, stdDev, min, max, sorted, counts };
         };
 
+        // Linear Regression
+        const calculateLinearRegression = (xData, yData) => {
+            if (xData.length !== yData.length || xData.length === 0) return null;
+            const n = xData.length;
+            const sumX = xData.reduce((a, b) => a + b, 0);
+            const sumY = yData.reduce((a, b) => a + b, 0);
+            const sumXY = xData.map((x, i) => x * yData[i]).reduce((a, b) => a + b, 0);
+            const sumX2 = xData.map(x => x * x).reduce((a, b) => a + b, 0);
+            const sumY2 = yData.map(y => y * y).reduce((a, b) => a + b, 0);
+
+            const denominator = (n * sumX2 - Math.pow(sumX, 2));
+            if (denominator === 0) return null; // Vertical line
+
+            const slope = (n * sumXY - sumX * sumY) / denominator;
+            const intercept = (sumY - slope * sumX) / n;
+            
+            const rNumerator = (n * sumXY - sumX * sumY);
+            const rDenominator = Math.sqrt((n * sumX2 - Math.pow(sumX, 2)) * (n * sumY2 - Math.pow(sumY, 2)));
+            const r = rDenominator === 0 ? 0 : rNumerator / rDenominator;
+
+            // Generate line points for plotting (min X and max X)
+            const minX = Math.min(...xData);
+            const maxX = Math.max(...xData);
+            const padding = (maxX - minX) * 0.1;
+            const lineStart = minX - padding;
+            const lineEnd = maxX + padding;
+
+            const line = [
+                { x: lineStart, y: slope * lineStart + intercept },
+                { x: lineEnd, y: slope * lineEnd + intercept }
+            ];
+
+            return { slope, intercept, r, r2: r * r, line };
+        };
+
         const createHistogramData = (data, bins = 10) => {
             if (!data.length) return [];
             const min = Math.min(...data);
@@ -180,20 +215,27 @@
         
         const callOpenRouterAPI = async (prompt) => {
             const apiKey = getApiKey();
-            const model = getModel();
+            const model = getModel() || 'google/gemini-2.0-flash-lite-preview-02-05:free';
             
-            if (!apiKey) throw new Error("API Key no configurada. Ve a Configuración.");
+            if (!apiKey) throw new Error("⚠️ API Key no configurada. Ve a Configuración.");
 
             const url = "https://openrouter.ai/api/v1/chat/completions";
             
+            const headers = {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": window.location.href, 
+                "X-Title": "CalCulo"
+            };
+
             const payload = {
                 "model": model,
                 "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+                    { "role": "user", "content": prompt }
+                ],
+                "top_p": 1,
+                "temperature": 0.7,
+                "repetition_penalty": 1
             };
 
             let attempt = 0;
@@ -201,35 +243,36 @@
                 try {
                     const response = await fetch(url, {
                         method: 'POST',
-                        headers: {
-                            "Authorization": `Bearer ${apiKey}`,
-                            "Content-Type": "application/json"
-                        },
+                        headers: headers,
                         body: JSON.stringify(payload)
                     });
 
                     if (response.status === 429) {
-                        await delay(2000 * Math.pow(2, attempt));
-                        attempt++; continue;
+                        console.warn("OpenRouter 429 (Busy). Retrying...");
+                        await delay(2000 * Math.pow(2, attempt)); 
+                        attempt++; 
+                        continue;
+                    }
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        if (response.status === 401) throw new Error("API Key inválida (401).");
+                        if (response.status === 400) throw new Error(`Solicitud inválida (400). Verifica el modelo seleccionado.`);
+                        if (response.status === 402) throw new Error("Sin créditos suficientes (402).");
+                        throw new Error(errorData.error?.message || `Error del servidor (${response.status})`);
                     }
 
                     const data = await response.json();
                     
-                    if (data.error) {
-                        // OpenRouter specific error handling
-                        let msg = data.error.message;
-                        if (msg.includes("credits")) msg = "Sin créditos o modelo no gratuito.";
-                        throw new Error(msg);
-                    }
-                    
+                    if (data.error) throw new Error(data.error.message);
+                    if (!data.choices || data.choices.length === 0) throw new Error("La IA no devolvió respuesta.");
+
                     return data.choices[0].message.content;
 
                 } catch (e) {
-                    // If it's an API key or credit issue, don't retry
-                    if (e.message.includes('API Key') || e.message.includes('créditos')) throw e;
-                    
+                    if (e.message.includes('API Key') || e.message.includes('créditos') || e.message.includes('400')) throw e;
                     attempt++; 
-                    if (attempt >= 3) throw new Error("Error de conexión con OpenRouter: " + e.message);
+                    if (attempt >= 3) throw new Error(`Fallo conexión IA: ${e.message}`);
                     await delay(1000);
                 }
             }
@@ -240,6 +283,7 @@
         const Sidebar = ({ activeView, onViewChange }) => {
             const menuItems = [
                 { id: 'calculator', icon: Calculator, label: 'Modelos' },
+                { id: 'linear_regression', icon: TrendingUp, label: 'Regresión Lineal' }, 
                 { id: 'tools', icon: FunctionSquare, label: 'Herramientas' },
                 { id: 'data_analysis', icon: Table, label: 'Mis Datos' },
                 { id: 'formulas', icon: BookOpen, label: 'Fórmulas' },
@@ -261,6 +305,7 @@
                                 <button
                                     key={item.id}
                                     onClick={() => onViewChange(item.id)}
+                                    title={item.label}
                                     className={`w-full flex flex-col items-center justify-center py-3 relative transition-all duration-200 group
                                         ${isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'}`}
                                 >
@@ -268,7 +313,7 @@
                                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-r-full" />
                                     )}
                                     <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
-                                    <span className="text-[10px] font-medium mt-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-10 bg-gray-800 text-white px-2 py-0.5 rounded pointer-events-none whitespace-nowrap z-50">
+                                    <span className="text-[10px] font-medium mt-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-10 bg-gray-800 text-white px-2 py-0.5 rounded pointer-events-none whitespace-nowrap z-50 shadow-sm">
                                         {item.label}
                                     </span>
                                 </button>
@@ -281,6 +326,23 @@
 
         const ConsolePanel = ({ logs }) => {
             const bottomRef = useRef(null);
+            
+            const renderLogContent = (text) => {
+                if (window.katex && (text.includes('$') || text.includes('\\'))) {
+                    try {
+                        const parts = text.split(/(\$[^$]+\$)/g);
+                        return parts.map((part, i) => {
+                            if (part.startsWith('$') && part.endsWith('$')) {
+                                const math = part.slice(1, -1);
+                                return <span key={i} dangerouslySetInnerHTML={{ __html: window.katex.renderToString(math) }} />;
+                            }
+                            return part;
+                        });
+                    } catch (e) { return text; }
+                }
+                return text;
+            };
+
             useEffect(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), [logs]);
 
             return (
@@ -301,7 +363,7 @@
                         {logs.map((log, index) => (
                             <div key={index} className={`break-words ${log.includes('❌') ? 'text-red-400' : log.includes('════') ? 'text-blue-400 font-bold' : log.includes('💡') ? 'text-purple-300' : 'text-green-400'}`}>
                                 <span className="text-gray-600 mr-2 select-none">$</span>
-                                {log}
+                                {renderLogContent(log)}
                             </div>
                         ))}
                         <div ref={bottomRef} />
@@ -366,6 +428,17 @@
                                     <Tooltip />
                                     <Line type="monotone" dataKey="value" stroke="#8884d8" dot={false} strokeWidth={2} />
                                 </ComposedChart>
+                            ) : chartType === 'scatter' ? (
+                                // SCATTER PLOT FOR LINEAR REGRESSION - FIXED
+                                <ComposedChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="x" type="number" name="X" allowDataOverflow={false} />
+                                    <YAxis dataKey="y" type="number" name="Y" allowDataOverflow={false} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                                    <Legend />
+                                    <Scatter name="Datos" data={data.points} fill="#8884d8" />
+                                    <Line data={data.line} type="monotone" dataKey="y" stroke="#ff7300" dot={false} strokeWidth={2} name="Tendencia Lineal" activeDot={false} />
+                                </ComposedChart>
                             ) : (
                                 <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
@@ -385,31 +458,24 @@
             );
         };
 
-        // --- TOOLS VIEW ---
+        // --- NEW TOOLS VIEW ---
         const ToolsView = () => {
             const [expanded, setExpanded] = useState({ combinatorics: true, zscore: true, prob: true });
-            
             const [combN, setCombN] = useState(5);
             const [combR, setCombR] = useState(2);
             const [combRes, setCombRes] = useState({ fact: '', nPr: '', nCr: '' });
-
             const [zX, setZX] = useState(12);
             const [zMu, setZMu] = useState(10);
             const [zSigma, setZSigma] = useState(2);
             const [zRes, setZRes] = useState({ z: '', p: '' });
 
             const renderMath = (tex) => window.katex ? <span dangerouslySetInnerHTML={{ __html: window.katex.renderToString(tex) }} /> : tex;
-
             const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
             const calcCombinatorics = () => {
                 const n = parseInt(combN), r = parseInt(combR);
                 if(isNaN(n) || isNaN(r)) return;
-                setCombRes({
-                    fact: factorial(n),
-                    nPr: nPr(n, r),
-                    nCr: nCr(n, r)
-                });
+                setCombRes({ fact: factorial(n), nPr: nPr(n, r), nCr: nCr(n, r) });
             };
 
             const calcZScore = () => {
@@ -427,21 +493,15 @@
                             <h2 className="text-2xl font-bold mb-2 flex items-center gap-2 text-blue-600 dark:text-blue-400">
                                 <FunctionSquare /> Herramientas de Cálculo
                             </h2>
-                            <p className="text-gray-600 dark:text-gray-400 text-sm">
-                                Calculadoras manuales para resolver problemas paso a paso. Ideal para verificar tus ejercicios.
-                            </p>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm">Calculadoras manuales para resolver problemas paso a paso.</p>
                         </div>
-
                         <div className="grid gap-6">
-                            {/* Combinatoria Card */}
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all">
+                            {/* Combinatorics Card */}
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center cursor-pointer" onClick={() => toggle('combinatorics')}>
-                                    <h3 className="font-bold flex items-center gap-2 text-blue-700 dark:text-blue-300">
-                                        <span className="bg-blue-100 dark:bg-blue-900 p-1 rounded text-xs">1</span> Combinatoria
-                                    </h3>
+                                    <h3 className="font-bold flex items-center gap-2 text-blue-700 dark:text-blue-300"><span className="bg-blue-100 dark:bg-blue-900 p-1 rounded text-xs">1</span> Combinatoria</h3>
                                     {expanded.combinatorics ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
                                 </div>
-                                
                                 {expanded.combinatorics && (
                                     <div className="p-6 grid md:grid-cols-2 gap-8">
                                         <div className="space-y-4">
@@ -450,43 +510,26 @@
                                                 <div><label className="text-xs font-semibold">r (Selección)</label><input type="number" value={combR} onChange={(e)=>setCombR(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
                                             </div>
                                             <button onClick={calcCombinatorics} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Calcular</button>
-                                            
                                             <div className="space-y-2 text-sm">
                                                 <div className="flex justify-between border-b dark:border-gray-700 pb-1"><span>Factorial (n!):</span> <span className="font-mono font-bold">{combRes.fact || '-'}</span></div>
                                                 <div className="flex justify-between border-b dark:border-gray-700 pb-1"><span>Permutación (nPr):</span> <span className="font-mono font-bold">{combRes.nPr || '-'}</span></div>
                                                 <div className="flex justify-between"><span>Combinación (nCr):</span> <span className="font-mono font-bold">{combRes.nCr || '-'}</span></div>
                                             </div>
                                         </div>
-                                        
                                         <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded text-sm space-y-3">
                                             <h4 className="font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">❓ ¿Cómo se hace?</h4>
-                                            <div>
-                                                <p className="font-semibold text-xs">Factorial:</p>
-                                                <div className="text-xs mb-1 opacity-80">Multiplica todos los enteros desde n hasta 1.</div>
-                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("n! = n \\times (n-1) \\dots \\times 1")}</div>
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold text-xs">Combinación (Orden no importa):</p>
-                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("C(n,r) = \\frac{n!}{r!(n-r)!}")}</div>
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold text-xs">Permutación (Orden importa):</p>
-                                                <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("P(n,r) = \\frac{n!}{(n-r)!}")}</div>
-                                            </div>
+                                            <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("n! = n \\times (n-1) \\dots \\times 1")}</div>
+                                            <div className="font-mono text-xs bg-white dark:bg-gray-800 p-1 rounded border dark:border-gray-600">{renderMath("C(n,r) = \\frac{n!}{r!(n-r)!}")}</div>
                                         </div>
                                     </div>
                                 )}
                             </div>
-
                             {/* Z-Score Card */}
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all">
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center cursor-pointer" onClick={() => toggle('zscore')}>
-                                    <h3 className="font-bold flex items-center gap-2 text-green-700 dark:text-green-300">
-                                        <span className="bg-green-100 dark:bg-green-900 p-1 rounded text-xs">2</span> Estandarización (Z-Score)
-                                    </h3>
+                                    <h3 className="font-bold flex items-center gap-2 text-green-700 dark:text-green-300"><span className="bg-green-100 dark:bg-green-900 p-1 rounded text-xs">2</span> Estandarización (Z-Score)</h3>
                                     {expanded.zscore ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
                                 </div>
-                                
                                 {expanded.zscore && (
                                     <div className="p-6 grid md:grid-cols-2 gap-8">
                                         <div className="space-y-4">
@@ -496,26 +539,14 @@
                                                 <div><label className="text-xs font-semibold">σ (Desv)</label><input type="number" value={zSigma} onChange={(e)=>setZSigma(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/></div>
                                             </div>
                                             <button onClick={calcZScore} className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Calcular Z</button>
-                                            
                                             <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded flex justify-between items-center">
                                                 <span className="font-bold text-gray-600 dark:text-gray-300">Valor Z:</span>
                                                 <span className="font-mono text-xl font-bold text-green-600 dark:text-green-400">{zRes.z || '--'}</span>
                                             </div>
-                                            <div className="text-xs text-center text-gray-500 dark:text-gray-400">
-                                                Probabilidad Acumulada P(Z &lt; {zRes.z || 'z'}): <strong>{zRes.p || '--'}</strong>
-                                            </div>
                                         </div>
-                                        
                                         <div className="bg-green-50 dark:bg-green-900/10 p-4 rounded text-sm space-y-3">
                                             <h4 className="font-bold text-green-800 dark:text-green-200 flex items-center gap-2">❓ ¿Cómo se hace?</h4>
-                                            <p className="text-xs opacity-90">El puntaje Z indica cuántas desviaciones estándar está un valor por encima o por debajo de la media.</p>
-                                            <div className="font-mono text-sm bg-white dark:bg-gray-800 p-3 rounded border dark:border-gray-600 text-center my-2">
-                                                {renderMath("Z = \\frac{x - \\mu}{\\sigma}")}
-                                            </div>
-                                            <p className="text-xs italic opacity-80">
-                                                Ejemplo: Si la media es 10 y la desviación es 2, un valor de 12 tiene un Z de 1.
-                                                (12-10)/2 = 1.
-                                            </p>
+                                            <div className="font-mono text-sm bg-white dark:bg-gray-800 p-3 rounded border dark:border-gray-600 text-center my-2">{renderMath("Z = \\frac{x - \\mu}{\\sigma}")}</div>
                                         </div>
                                     </div>
                                 )}
@@ -527,6 +558,52 @@
         };
 
         // --- VIEWS ---
+
+        const LinearRegressionView = ({ onAnalyze }) => {
+            const [xData, setXData] = useState('');
+            const [yData, setYData] = useState('');
+
+            const loadExample = () => {
+                setXData('1, 2, 3, 4, 5, 6, 7, 8, 9, 10');
+                setYData('2, 4.1, 5.8, 8, 10.2, 12.1, 14.2, 16, 18, 20.1');
+            };
+
+            const handleProcess = () => {
+                const cleanX = xData.split(/[,\s\n]+/).map(Number).filter(n => !isNaN(n));
+                const cleanY = yData.split(/[,\s\n]+/).map(Number).filter(n => !isNaN(n));
+                if (cleanX.length === 0 || cleanY.length === 0) return;
+                onAnalyze(cleanX, cleanY);
+            };
+
+            return (
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="mb-4 flex gap-2">
+                        <button onClick={loadExample} className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-200 transition">📊 Ejemplo</button>
+                        <button onClick={() => { setXData(''); setYData(''); }} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition ml-auto flex items-center gap-1"><Eraser size={12} /> Limpiar</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 flex-1 min-h-0">
+                        <textarea
+                            value={xData}
+                            onChange={(e) => setXData(e.target.value)}
+                            placeholder="Datos de X: 1, 2, 3..."
+                            className="w-full h-full p-3 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                        />
+                        <textarea
+                            value={yData}
+                            onChange={(e) => setYData(e.target.value)}
+                            placeholder="Datos de Y: 2, 4, 6..."
+                            className="w-full h-full p-3 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                        />
+                    </div>
+
+                    <button onClick={handleProcess} className="w-full mt-4 flex items-center justify-center space-x-2 px-4 py-2.5 rounded-md bg-[#2E74B5] text-white font-medium hover:bg-blue-700 shadow-md transition-all active:transform active:scale-95">
+                        <TrendingUp size={18} />
+                        <span>Calcular Regresión</span>
+                    </button>
+                </div>
+            );
+        };
 
         const DataAnalysisView = ({ onAnalyze }) => {
             const [inputData, setInputData] = useState('');
@@ -880,10 +957,14 @@
             const [darkMode, setDarkMode] = useState(false);
             
             // Calculator State
-            const [distType, setDistType] = useState('BINOMIAL'); // BINOMIAL, POISSON, NORMAL
+            const [distType, setDistType] = useState('BINOMIAL');
             const [chartData, setChartData] = useState(null);
-            const [currentChartType, setCurrentChartType] = useState('distribution'); // distribution, histogram, line
+            const [currentChartType, setCurrentChartType] = useState('distribution');
             
+            // State for independent charts (Data Analysis and Linear Regression)
+            const [dataAnalysisChart, setDataAnalysisChart] = useState({ data: null, type: 'histogram' });
+            const [linearRegressionChart, setLinearRegressionChart] = useState({ data: null, type: 'scatter' });
+
             // Params
             const [params, setParams] = useState({ n: 10, p: 0.5, k: '', lambda: 3, mu: 0, sigma: 1 });
 
@@ -898,7 +979,7 @@
             const handleCalcDistribution = async () => {
                 setStatus('PROCESSING');
                 setLogs([]);
-                await delay(300); // UI feel
+                await delay(300);
 
                 try {
                     let data = [], title = "";
@@ -917,7 +998,6 @@
                         title = `Binomial(n=${n}, p=${p})`;
                         stats = { mean: n * p, variance: n * p * (1-p) };
                         
-                        // Specific K
                         if (k !== '') {
                             const val = Number(k);
                             const pK = binomialPMF(val, Number(n), Number(p));
@@ -927,7 +1007,6 @@
                     } else if (distType === 'POISSON') {
                         const { lambda, k } = params;
                         let cumulative = 0;
-                        // Cutoff logic
                         const maxX = Math.ceil(Number(lambda) + 4 * Math.sqrt(Number(lambda))) + 2;
                         
                         for (let i = 0; i <= maxX; i++) {
@@ -946,7 +1025,6 @@
                         const m = Number(mu), s = Number(sigma);
                         if (s <= 0) throw new Error("Sigma debe ser > 0");
                         
-                        // Generate continuous points
                         const start = m - 4 * s;
                         const end = m + 4 * s;
                         const step = (end - start) / 100;
@@ -958,7 +1036,6 @@
                         stats = { mean: m, variance: s*s };
                     }
 
-                    // Logging
                     addLog('═══════════════════════════════════════════');
                     addLog(`📊 ${title}`);
                     addLog('═══════════════════════════════════════════');
@@ -973,8 +1050,9 @@
                     setChartData(data);
                     setCurrentChartType('distribution');
 
-                    // AI Insight
-                    const insight = await callOpenRouterAPI(`Analiza brevemente la distribución ${title}. Media: ${stats.mean}, Varianza: ${stats.variance}. Dame 1 ejemplo real.`);
+                    const prompt = `Analiza brevemente la distribución ${title}. Media: ${stats.mean}, Varianza: ${stats.variance}. Dame 1 ejemplo real. 
+                    Para las variables y términos matemáticos como media, varianza, n, p, usa notación LaTeX inline (ej: $\\mu$, $\\sigma^2$, $n$).`;
+                    const insight = await callOpenRouterAPI(prompt);
                     addLog(''); addLog(`💡 ${insight}`);
                     setStatus('READY');
 
@@ -1011,11 +1089,43 @@
                     } else if (type === 'line') {
                         cData = data.map((v, i) => ({ index: i+1, value: v }));
                     }
-                    setChartData(cData);
-                    setCurrentChartType(type);
+                    // Update state for Data Analysis chart specifically
+                    setDataAnalysisChart({ data: cData, type: type });
                     
                     setStatus('READY');
 
+                } catch (e) {
+                    addLog(`❌ Error: ${e.message}`);
+                    setStatus('ERROR');
+                }
+            };
+
+            // --- LINEAR REGRESSION LOGIC ---
+            const handleLinearRegression = async (xData, yData) => {
+                setStatus('PROCESSING');
+                setLogs([]);
+                await delay(300);
+
+                try {
+                    const stats = calculateLinearRegression(xData, yData);
+                    if (!stats) throw new Error("Los datos de X e Y deben tener la misma longitud.");
+
+                    addLog('═══════════════════════════════════════════');
+                    addLog('📈 ANÁLISIS DE REGRESIÓN LINEAL');
+                    addLog('═══════════════════════════════════════════');
+                    addLog(`Ecuación: y = ${stats.slope.toFixed(4)}x + ${stats.intercept.toFixed(4)}`);
+                    addLog(`Coef. Correlación (r): ${stats.r.toFixed(4)}`);
+                    addLog(`Coef. Determinación (r²): ${stats.r2.toFixed(4)}`);
+
+                    // Prepare data for scatter plot with trendline
+                    const combinedData = xData.map((x, i) => ({ x, y: yData[i] }));
+                    // Line data: just start and end points
+                    const lineData = stats.line;
+                    
+                    // Update state for Linear Regression chart specifically
+                    setLinearRegressionChart({ data: { points: combinedData, line: lineData }, type: 'scatter' });
+
+                    setStatus('READY');
                 } catch (e) {
                     addLog(`❌ Error: ${e.message}`);
                     setStatus('ERROR');
@@ -1030,12 +1140,13 @@
                 addLog('🧠 Analizando problema...');
                 
                 try {
-                    const res = await callOpenRouterAPI(`
-                        Actúa como profesor de estadística. Resuelve: "${text}". 
+                    const prompt = `Actúa como profesor de estadística. Resuelve: "${text}". 
                         1. Identifica el modelo (Binomial, Poisson, Normal, o datos). 
                         2. Extrae datos. 
-                        3. Resuelve paso a paso con fórmulas LaTeX ($...$).
-                    `);
+                        3. Resuelve paso a paso. 
+                        IMPORTANTE: Usa notación LaTeX inline (encerrada en un solo signo $) para TODAS las variables, números y fórmulas matemáticas. 
+                        Ejemplo: "La probabilidad es $P(X=k)$ donde $n=10$ y $p=0.5$".`;
+                    const res = await callOpenRouterAPI(prompt);
                     
                     addLog('');
                     const lines = res.split('\n');
@@ -1055,6 +1166,60 @@
                     case 'formulas': return <ReferenceView />;
                     case 'help': return <HelpView />;
                     case 'tools': return <ToolsView />;
+                    case 'linear_regression':
+                        return (
+                            <>
+                                <header className="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shadow-sm shrink-0">
+                                    <div>
+                                        <h1 className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">CalCulo</h1>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Regresión Lineal</p>
+                                    </div>
+                                    <div className="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-800">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${status === 'PROCESSING' ? 'bg-yellow-400 animate-pulse' : status === 'ERROR' ? 'bg-red-500' : 'bg-[#28A745]'}`}></div>
+                                        <span className="text-xs font-semibold text-[#28A745] dark:text-green-400">{status === 'PROCESSING' ? 'Calculando...' : 'Listo'}</span>
+                                    </div>
+                                </header>
+                                <div className="flex-1 p-4 grid grid-cols-12 grid-rows-6 gap-4 overflow-hidden min-h-0">
+                                    <div className="col-span-12 md:col-span-4 row-span-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex flex-col h-full overflow-y-auto">
+                                        <div className="mb-4 flex items-center gap-2 text-yellow-600 dark:text-yellow-400 font-bold border-b pb-2"><TrendingUp size={18}/> Regresión Lineal</div>
+                                        <LinearRegressionView onAnalyze={handleLinearRegression} />
+                                    </div>
+                                    <div className="col-span-12 md:col-span-8 row-span-2 min-h-0">
+                                        <ConsolePanel logs={logs} />
+                                    </div>
+                                    <div className="col-span-12 md:col-span-8 row-span-4 min-h-0 pb-2">
+                                        <ChartsPanel data={linearRegressionChart.data} chartType={linearRegressionChart.type} />
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    case 'data_analysis':
+                        return (
+                            <>
+                                <header className="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shadow-sm shrink-0">
+                                    <div>
+                                        <h1 className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">CalCulo</h1>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Análisis de Datos</p>
+                                    </div>
+                                    <div className="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-800">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${status === 'PROCESSING' ? 'bg-yellow-400 animate-pulse' : status === 'ERROR' ? 'bg-red-500' : 'bg-[#28A745]'}`}></div>
+                                        <span className="text-xs font-semibold text-[#28A745] dark:text-green-400">{status === 'PROCESSING' ? 'Calculando...' : 'Listo'}</span>
+                                    </div>
+                                </header>
+                                <div className="flex-1 p-4 grid grid-cols-12 grid-rows-6 gap-4 overflow-hidden min-h-0">
+                                    <div className="col-span-12 md:col-span-4 row-span-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex flex-col h-full overflow-y-auto">
+                                        <div className="mb-4 flex items-center gap-2 text-green-600 dark:text-green-400 font-bold border-b pb-2"><Table size={18}/> Mis Datos</div>
+                                        <DataAnalysisView onAnalyze={handleDataAnalysis} />
+                                    </div>
+                                    <div className="col-span-12 md:col-span-8 row-span-2 min-h-0">
+                                        <ConsolePanel logs={logs} />
+                                    </div>
+                                    <div className="col-span-12 md:col-span-8 row-span-4 min-h-0 pb-2">
+                                        <ChartsPanel data={dataAnalysisChart.data} chartType={dataAnalysisChart.type} />
+                                    </div>
+                                </div>
+                            </>
+                        );
                     case 'problem_solver': 
                         return (
                             <div className="p-6 h-full flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -1071,13 +1236,13 @@
                             </div>
                         );
                     default:
-                        // Combined view for Calculator and Data Analysis
+                        // Calculator (Modelos)
                         return (
                             <>
                                 <header className="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shadow-sm shrink-0">
                                     <div>
-                                        <h1 className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">PyStat Visualizer</h1>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">Estadística & Probabilidad (OpenRouter)</p>
+                                        <h1 className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">CalCulo</h1>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Modelos Teóricos</p>
                                     </div>
                                     <div className="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-800">
                                         <div className={`w-2.5 h-2.5 rounded-full ${status === 'PROCESSING' ? 'bg-yellow-400 animate-pulse' : status === 'ERROR' ? 'bg-red-500' : 'bg-[#28A745]'}`}></div>
@@ -1088,52 +1253,41 @@
                                 <div className="flex-1 p-4 grid grid-cols-12 grid-rows-6 gap-4 overflow-hidden min-h-0">
                                     {/* INPUT PANEL */}
                                     <div className="col-span-12 md:col-span-4 row-span-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex flex-col h-full overflow-y-auto">
-                                        {activeView === 'calculator' ? (
-                                            <>
-                                                <div className="mb-4 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold border-b pb-2"><Calculator size={18}/> Modelos Teóricos</div>
-                                                <div className="space-y-4">
-                                                    <div>
-                                                        <label className="block text-xs font-semibold text-gray-500 mb-1">Distribución</label>
-                                                        <select value={distType} onChange={(e) => setDistType(e.target.value)} className="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600">
-                                                            <option value="BINOMIAL">Binomial</option>
-                                                            <option value="POISSON">Poisson</option>
-                                                            <option value="NORMAL">Normal (Gaussiana)</option>
-                                                        </select>
-                                                    </div>
-                                                    
-                                                    {distType === 'BINOMIAL' && (
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <div><label className="text-xs">n (Ensayos)</label><input type="number" value={params.n} onChange={e=>setParams({...params, n:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                            <div><label className="text-xs">p (Probabilidad)</label><input type="number" step="0.1" value={params.p} onChange={e=>setParams({...params, p:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                            <div className="col-span-2"><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm" placeholder="Valor exacto"/></div>
-                                                        </div>
-                                                    )}
-                                                    {distType === 'POISSON' && (
-                                                        <div className="space-y-2">
-                                                            <div><label className="text-xs">λ (Lambda)</label><input type="number" step="0.1" value={params.lambda} onChange={e=>setParams({...params, lambda:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                            <div><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                        </div>
-                                                    )}
-                                                    {distType === 'NORMAL' && (
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <div><label className="text-xs">μ (Media)</label><input type="number" step="0.1" value={params.mu} onChange={e=>setParams({...params, mu:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                            <div><label className="text-xs">σ (Desv. Est.)</label><input type="number" step="0.1" value={params.sigma} onChange={e=>setParams({...params, sigma:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
-                                                        </div>
-                                                    )}
-
-                                                    <button onClick={handleCalcDistribution} disabled={status==='PROCESSING'} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition flex justify-center items-center gap-2">
-                                                        <Play size={16} /> Calcular Modelo
-                                                    </button>
+                                        <div className="mb-4 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold border-b pb-2"><Calculator size={18}/> Modelos Teóricos</div>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 mb-1">Distribución</label>
+                                                <select value={distType} onChange={(e) => setDistType(e.target.value)} className="w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600">
+                                                    <option value="BINOMIAL">Binomial</option>
+                                                    <option value="POISSON">Poisson</option>
+                                                    <option value="NORMAL">Normal (Gaussiana)</option>
+                                                </select>
+                                            </div>
+                                            
+                                            {distType === 'BINOMIAL' && (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div><label className="text-xs">n (Ensayos)</label><input type="number" value={params.n} onChange={e=>setParams({...params, n:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                    <div><label className="text-xs">p (Probabilidad)</label><input type="number" step="0.1" value={params.p} onChange={e=>setParams({...params, p:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                    <div className="col-span-2"><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm" placeholder="Valor exacto"/></div>
                                                 </div>
-                                            </>
-                                        ) : activeView === 'data_analysis' ? (
-                                            <>
-                                                <div className="mb-4 flex items-center gap-2 text-green-600 dark:text-green-400 font-bold border-b pb-2"><Table size={18}/> Mis Datos</div>
-                                                <DataAnalysisView onAnalyze={handleDataAnalysis} />
-                                            </>
-                                        ) : (
-                                            <div className="text-center text-gray-500 mt-10">Selecciona una herramienta del menú lateral</div>
-                                        )}
+                                            )}
+                                            {distType === 'POISSON' && (
+                                                <div className="space-y-2">
+                                                    <div><label className="text-xs">λ (Lambda)</label><input type="number" step="0.1" value={params.lambda} onChange={e=>setParams({...params, lambda:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                    <div><label className="text-xs">k (Opcional)</label><input type="number" value={params.k} onChange={e=>setParams({...params, k:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                </div>
+                                            )}
+                                            {distType === 'NORMAL' && (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div><label className="text-xs">μ (Media)</label><input type="number" step="0.1" value={params.mu} onChange={e=>setParams({...params, mu:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                    <div><label className="text-xs">σ (Desv. Est.)</label><input type="number" step="0.1" value={params.sigma} onChange={e=>setParams({...params, sigma:e.target.value})} className="w-full p-2 border rounded text-sm"/></div>
+                                                </div>
+                                            )}
+
+                                            <button onClick={handleCalcDistribution} disabled={status==='PROCESSING'} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition flex justify-center items-center gap-2">
+                                                <Play size={16} /> Calcular Modelo
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* OUTPUT PANELS */}
@@ -1163,4 +1317,4 @@
         root.render(<App />);
     </script>
 </body>
-</html>
+</html
