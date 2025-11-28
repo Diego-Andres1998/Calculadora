@@ -174,9 +174,65 @@
                         <h3 className="font-bold text-lg text-slate-800 mb-2">Herramientas Manuales</h3>
                         <p className="text-sm text-slate-500">Combinatoria y Z-Score para estudiantes.</p>
                     </div>
+                    <div onClick={() => onNavigate('regression')} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:border-yellow-400 cursor-pointer transition-all hover:shadow-md group">
+                        <div className="mb-4 text-yellow-500 group-hover:scale-110 transition-transform origin-left"><Icon name="trending-up" size={32} /></div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">Regresión Lineal</h3>
+                        <p className="text-sm text-slate-500">Analiza la relación entre dos variables.</p>
+                    </div>
                 </div>
             </div>
         );
+
+        const LinearRegressionSection = () => (
+            <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <SectionHeader
+                    icon="trending-up"
+                    title="Análisis de Regresión Lineal"
+                    description="Encuentra y visualiza la relación lineal entre dos conjuntos de variables (X e Y)."
+                />
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <Step num="1" title="Ingresa tus Datos Bivariados">
+                        <p className="mb-2">Introduce tus datos en las dos áreas de texto. Asegúrate de que cada punto en X corresponda a un punto en Y.</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-800 text-slate-200 p-4 rounded-lg font-mono text-sm relative group">
+                                <span className="text-slate-500">// Datos X</span><br/>
+                                1, 2, 3, 4, 5
+                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <CopyButton text="1, 2, 3, 4, 5" />
+                                </div>
+                            </div>
+                            <div className="bg-slate-800 text-slate-200 p-4 rounded-lg font-mono text-sm relative group">
+                                <span className="text-slate-500">// Datos Y</span><br/>
+                                2, 4.1, 5.8, 8, 10.2
+                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <CopyButton text="2, 4.1, 5.8, 8, 10.2" />
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">Usa el botón "📊 Ejemplo" en la app para cargar datos de muestra.</p>
+                    </Step>
+
+                    <Step num="2" title="Calcular la Regresión">
+                        <p>Haz clic en <strong>"📈 Calcular Regresión"</strong> para procesar los datos.</p>
+                    </Step>
+
+                    <Step num="3" title="Interpreta los Resultados">
+                        <p>La aplicación te proporcionará:</p>
+                        <ul className="list-disc pl-5 mt-2 space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <li><strong className="text-slate-700">Ecuación de la Recta:</strong> La fórmula <code className="text-xs font-mono">y = mx + b</code> que mejor se ajusta a tus datos.</li>
+                            <li><strong className="text-slate-700">Coeficiente de Correlación (r):</strong> Mide la fuerza y dirección de la relación.</li>
+                            <li><strong className="text-slate-700">Gráfico de Dispersión:</strong> Una visualización de tus puntos de datos con la línea de regresión superpuesta.</li>
+                        </ul>
+                    </Step>
+                </div>
+
+                <NoteBox>
+                    <strong>Importante:</strong> Asegúrate de que la cantidad de puntos de datos en la columna X sea la misma que en la columna Y para que el cálculo sea válido.
+                </NoteBox>
+            </div>
+        );
+
 
         const ModelsSection = () => (
             <div className="max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -413,6 +469,7 @@
             const menuItems = [
                 { id: 'intro', label: 'Bienvenida', icon: 'home' },
                 { id: 'models', label: 'Calculadora Modelos', icon: 'calculator' },
+                { id: 'regression', label: 'Regresión Lineal', icon: 'trending-up' },
                 { id: 'tools', label: 'Herramientas', icon: 'function-square' },
                 { id: 'data', label: 'Análisis de Datos', icon: 'table' },
                 { id: 'ai', label: 'Analizador IA', icon: 'brain' },
@@ -423,6 +480,7 @@
                 switch(activeSection) {
                     case 'intro': return <IntroSection onNavigate={setActiveSection} />;
                     case 'models': return <ModelsSection />;
+                    case 'regression': return <LinearRegressionSection />;
                     case 'tools': return <ToolsSection />;
                     case 'data': return <DataSection />;
                     case 'ai': return <AISection />;
